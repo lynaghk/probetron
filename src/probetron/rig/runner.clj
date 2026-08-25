@@ -83,10 +83,12 @@
   "Return the handle that one operation uses to start owned helpers.
 
    Cleanup is already registered when an operation receives it, so no helper
-   can outlive the rig."
+   can outlive the rig, and :stopping? tells a waiting operation that the
+   child it watched died in that cleanup rather than on its own."
   [state runtime]
   {:runtime runtime
-   :start-helper! (fn [argv opts] (start-helper! state runtime argv opts))})
+   :start-helper! (fn [argv opts] (start-helper! state runtime argv opts))
+   :stopping? (fn [] (true? (:cleaned? @state)))})
 
 (defn start-helper!
   "Start one long-running helper as its own process group and own it until cleanup."
@@ -263,6 +265,7 @@
   "The real filesystem behind the runtime."
   {:directory? (fn [path] (fs/directory? path))
    :exists? (fn [path] (fs/exists? path))
+   :readable? (fn [path] (fs/readable? path))
    :read-file (fn [path] (when (fs/exists? path) (slurp (fs/file path))))
    :write-file! (fn [path text] (write-atomically! path text))
    :delete-file! (fn [path] (fs/delete-if-exists path))})

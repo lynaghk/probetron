@@ -28,6 +28,7 @@ Everything it owns lives under `probetron/`.
 | `src/probetron/rig/main.clj`        | imperative shell of the rig                                       |
 | `src/probetron/rig/runner.clj`      | imperative shell that owns the target lock and the process groups |
 | `src/probetron/rig/target.clj`      | imperative shell of `info`, `flash`, `erase`, and `reset`         |
+| `src/probetron/rig/session.clj`     | imperative shell of the locked `connect` session                  |
 | `test/probetron/`                   | `clojure.test` namespaces that the runner discovers               |
 | `VERSION`                           | the release version, which `probetron.version` repeats            |
 
@@ -216,9 +217,38 @@ Only a verified download pulses RUN, so a failed flash leaves the target where i
 
 A missing SPI device, GPIO chip, or executable stops the operation before any process starts, and the diagnostic names the resource and the repair.
 
+## Byte and RTT sessions
+
+`connect` owns the target until the outer SSH command ends.
+It publishes the DUT byte channel on Pi loopback alone through one `socat` listener.
+
+```text
+socat TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1 FILE:/dev/ttyAMA0,raw,echo=0,b115200
+```
+
+`max-children=1` allows one byte client at a time, and `fork` accepts the next client as soon as that one leaves, so a byte client reconnects for as long as the session lives.
+`fork` also opens the channel address again for every accepted connection, so a DUT that re-enumerated over USB resolves the stable `/dev/probetron-dut` path once more.
+
+The UART channel takes the requested bit rate and the USB channel takes none.
+The UART device belongs to the image, so a missing `/dev/ttyAMA0` fails at once, while `/dev/probetron-dut` appears only after the DUT enumerates, so the USB channel waits up to `--usb-wait-seconds` for it.
+A channel device that is missing or that the rig cannot read names itself, its expected path, and the wiring or image rule that repairs it.
+
+`--rtt` decodes the logs of the firmware the target already runs.
+The ELF arrives over the same bounded volatile upload path as a flash and validates before any hardware opens.
+
+```text
+probe-rs attach --probe 0:0:/dev/spidev0.0 --chip RP235x --protocol swd --speed 1000 <upload>
+```
+
+`attach` never downloads and never resets, so RTT joins a running target.
+The decoder and the listener are two owned process groups that know nothing of each other: DUT bytes stay on the TCP service, decoded RTT text stays on rig standard output and standard error, and a decoder that stops leaves the bridge usable.
+
+The session ends when its listener ends, when the client disconnects, or when a handled signal arrives.
+Cleanup then removes both process groups and the RTT upload, and it leaves the target alone unless `--reset-on-exit` asked for one best-effort reset.
+
 ## Current state
 
 The operation model, both command lines, and both entry points parse, validate, and refuse malformed input.
 The rig owns the target lock, the active record, and the process groups of one operation, and `status` reports what owns the target.
-`info`, `flash`, `erase`, and `reset` drive the hardware, while `connect` and `debug` still report the operation they hold the target for.
+`info`, `flash`, `erase`, `reset`, and `connect` drive the hardware, while `debug` still reports the operation it holds the target for.
 The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said, while `connect` and `debug` still name the remote command they would have run.

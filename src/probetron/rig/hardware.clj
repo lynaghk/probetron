@@ -26,6 +26,14 @@
 (def byte-port 5555)
 (def dap-port 50000)
 
+(def byte-listen-options
+  "How the rig byte service listens.
+
+   It reuses the address, forks one child for every accepted connection, and
+   allows one child at a time, so exactly one byte client is active and the
+   next one connects as soon as that client leaves."
+  "reuseaddr,fork,max-children=1")
+
 (def swd-protocol
   "The only wire protocol of the direct Linux SPI probe."
   "swd")
@@ -72,6 +80,41 @@
   (conj (probe-command executables hardware "download" {:chip chip :speed-khz speed-khz})
         "--verify" path))
 
+(defn rtt-command
+  "Return the argv that decodes RTT of the firmware the target already runs.
+
+   attach never downloads and never resets, so the decoder joins a target that
+   keeps whatever state it had."
+  [executables hardware {:keys [chip speed-khz path]}]
+  (conj (probe-command executables hardware "attach" {:chip chip :speed-khz speed-khz}) path))
+
+(defn byte-service-command
+  "Return the argv of the rig byte listener.
+
+   socat accepts on Pi loopback alone, and it opens the channel address again
+   for every accepted connection, so a DUT that re-enumerated resolves once more."
+  [{:keys [socat]} {:keys [loopback byte-port]} address]
+  [socat
+   (str "TCP-LISTEN:" byte-port ",bind=" loopback "," byte-listen-options)
+   address])
+
+(defn channel-address
+  "Return the socat address of one DUT byte channel.
+
+   Both channels are raw byte streams behind a stable path, and only the UART
+   carries a bit rate."
+  [{:keys [uart-device usb-device]} {:keys [channel baud]}]
+  (case channel
+    :uart (str "FILE:" uart-device ",raw,echo=0,b" baud)
+    :usb (str "FILE:" usb-device ",raw,echo=0")))
+
+(defn channel-resource
+  "Name the rig resource that carries one DUT byte channel."
+  [channel]
+  (case channel
+    :uart :uart-device
+    :usb :usb-device))
+
 (defn erase-command
   "Return the argv that erases the whole target once."
   [executables hardware {:keys [chip speed-khz]}]
@@ -109,7 +152,18 @@
                              " to header pins 23, 21, 19, and 20")}
    :gpio-chip {:in :hardware
                :name "GPIO chip"
-               :repair "reboot the rig and wire GPIO26 on header pin 37 to the DUT RUN line"}})
+               :repair "reboot the rig and wire GPIO26 on header pin 37 to the DUT RUN line"}
+   :socat {:in :executables
+           :name "socat executable"
+           :repair "reinstall the rig image, which installs socat"}
+   :uart-device {:in :hardware
+                 :name "UART device"
+                 :repair (str "enable UART0 in the rig image and wire the DUT RX and TX lines"
+                              " to header pins 8 and 10")}
+   :usb-device {:in :hardware
+                :name "DUT USB device"
+                :repair (str "plug the DUT into the fixed Pi USB port that the image udev rule"
+                             " names, and check that the firmware exposes a USB CDC device")}})
 
 (defn resource-path
   "Return the absolute path that a runtime gives one rig resource."
@@ -121,3 +175,9 @@
   [resource path]
   (let [{:keys [name repair]} (resources resource)]
     (str "missing " name " " path ": " repair)))
+
+(defn unreadable-resource-message
+  "Name a rig resource that exists but that the rig cannot open, and say what repairs it."
+  [resource path]
+  (let [{:keys [name repair]} (resources resource)]
+    (str "cannot read " name " " path ": " repair)))

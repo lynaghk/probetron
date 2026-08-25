@@ -4,6 +4,7 @@
   (:require [probetron.rig.config :as rig]
             [probetron.rig.lifecycle :as lifecycle]
             [probetron.rig.runner :as runner]
+            [probetron.rig.session :as session]
             [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
@@ -29,16 +30,18 @@
 
 (defn perform!
   "Carry out one operation that already owns the target."
-  [operation session]
-  (if (contains? target/operations (:operation operation))
-    (target/perform! operation session)
-    (unsupported! operation)))
+  [operation handle]
+  (let [command (:operation operation)]
+    (cond
+      (contains? target/operations command) (target/perform! operation handle)
+      (contains? session/operations command) (session/perform! operation handle)
+      :else (unsupported! operation))))
 
 (defn unsupported!
   "Report a long session that this rig cannot open yet.
 
-   The byte, RTT, and DAP sessions still have no backend, so the rig names the
-   operation it holds the target for and gives the target back."
+   The DAP session still has no backend, so the rig names the operation it
+   holds the target for and gives the target back."
   [operation]
   (runner/warn! (str "this rig has no session backend, so "
                      (name (:operation operation)) " cannot run"))
