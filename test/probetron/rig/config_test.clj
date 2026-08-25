@@ -29,6 +29,12 @@
   (is (= :help (:action (parse ["--help"]))))
   (is (= operation/exit-ok (:exit (parse ["--help"])))))
 
+(deftest the-rig-entry-point-carries-no-shell-of-its-own
+  (testing "a shell belongs to the client alone, because the rig is already the login"
+    (is (str/includes? (usage-error ["shell"]) "unknown command")))
+  (testing "and the rig help never offers one"
+    (is (not (str/includes? (:text (parse [])) "probetron-rig shell")))))
+
 (deftest rig-information
   (is (= {:operation :info :format :text} (operation ["info"])))
   (is (= {:operation :info :format :edn} (operation ["info" "--format" "edn"])))

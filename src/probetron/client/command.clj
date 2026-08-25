@@ -86,6 +86,16 @@
        (conj (str rig-user "@" host))
        (conj remote-command))))
 
+(defn shell-argv
+  "Return the argv of one interactive login on the rig.
+
+   It asks for a terminal and names no remote command, so the login shell of
+   the rig account answers instead of one quoted operation."
+  [{:keys [ssh key host]}]
+  (-> [ssh "-i" key "-t"]
+      (into ssh-options)
+      (conj (str rig-user "@" host))))
+
 (defn session-argv
   "Return the argv of one SSH invocation that publishes a rig service on the client.
 

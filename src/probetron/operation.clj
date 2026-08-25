@@ -7,7 +7,8 @@
   (:require [babashka.cli :as cli]
             [clojure.string :as str]))
 
-(declare connect-fields connect-option-errors fields resolve-field parse-host parse-chip
+(declare build-command usb-error connect-fields connect-option-errors fields resolve-field
+         parse-host parse-chip
          parse-speed-khz parse-baud parse-usb-wait-seconds parse-local-port parse-channel
          parse-format parse-integer ok invalid hostname? ipv4-literal? ipv6-literal?)
 
@@ -30,6 +31,13 @@
 (def min-local-port 1024)
 (def max-local-port 65535)
 (def max-elf-bytes (* 64 1024 1024))
+
+(def usb-console-address
+  "The address of the rig on its own USB console link.
+
+   The rig holds this address and serves the one lease that a client takes, so
+   --usb reaches a rig that no lab network has to carry."
+  "192.168.99.1")
 
 (def channels [:usb :uart])
 (def formats [:text :edn])
@@ -133,7 +141,23 @@
   "Build a validated public operation from a command keyword and a parsed command line.
 
    The context is {:opts opts :args args :env env :elf-facts probe :use-env? bool}.
-   Return {:operation operation} or {:errors [message ...]}."
+   Return {:operation operation} or {:errors [message ...]}.
+   --usb is the whole of the USB console: it resolves to the one address the
+   rig holds on that link, so every command reaches a rig over one cable."
+  [command {:keys [opts] :as context}]
+  (if-let [error (usb-error opts)]
+    {:errors [error]}
+    (build-command command (cond-> context
+                             (:usb opts) (assoc-in [:opts :host] usb-console-address)))))
+
+(defn usb-error
+  "Return why one command line may not name a rig twice, or nil."
+  [opts]
+  (when (and (:usb opts) (:host opts))
+    "invalid --usb: it names the rig on the USB console, so it is valid only without --host"))
+
+(defn build-command
+  "Build the operation of one command from a context whose host is resolved."
   [command {:keys [opts args elf-facts] :as context}]
   (case command
     (:info :status)
@@ -196,7 +220,12 @@
             (fn [values] {:operation :debug
                           :host (:host values)
                           :local-port (:local-port values)
-                          :reset-on-exit? (true? (:reset-on-exit opts))}))))
+                          :reset-on-exit? (true? (:reset-on-exit opts))}))
+
+    :shell
+    (finish (collect [:host] context)
+            [(unexpected-argument-error args)]
+            (fn [values] {:operation :shell :host (:host values)}))))
 
 (defn connect-fields
   "Return the extra fields that one connect command resolves.

@@ -5,11 +5,12 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [probetron.client.session :as session]
+            [probetron.client.shell :as shell]
             [probetron.operation :as op]
             [probetron.version :as version])
   (:import (java.io StringWriter)))
 
-(declare with-client! run-client! fake-ssh! recorded-argv recorded-stdin key-path
+(declare with-client! run-client! run-shell! fake-ssh! recorded-argv recorded-stdin key-path
          rig-key elf-file rig-text rig-edn)
 
 (def rig-text
@@ -141,6 +142,38 @@
         (is (= op/exit-failure exit))
         (is (str/includes? out "no debug probe found"))))))
 
+(deftest a-usb-console-shell-is-one-interactive-login-and-no-remote-command
+  (with-client! {}
+    (fn [client]
+      (let [{:keys [exit calls]} (run-shell! client {:operation :shell
+                                                     :host op/usb-console-address})]
+        (is (= op/exit-ok exit))
+        (is (= [(:ssh client) "-i" (key-path client op/usb-console-address) "-t"
+                "-o" "BatchMode=yes"
+                "-o" "IdentitiesOnly=yes"
+                "-o" "StrictHostKeyChecking=no"
+                "-o" "UserKnownHostsFile=/dev/null"
+                "-o" "GlobalKnownHostsFile=/dev/null"
+                "-o" "LogLevel=ERROR"
+                (str "probetron@" op/usb-console-address)]
+               (recorded-argv client))
+            "the login asks for a terminal and carries no remote command")
+        (testing "the operator owns every stream of the session"
+          (let [opts (:opts (first @calls))]
+            (is (= [:inherit :inherit :inherit] [(:in opts) (:out opts) (:err opts)]))))
+        (testing "the shell fetches the key of that rig like every other operation"
+          (is (= [(str "http://" op/usb-console-address "/probetron_key")]
+                 @(:requested client))))))))
+
+(deftest a-usb-console-shell-that-cannot-fetch-a-key-runs-nothing
+  (with-client! {:key-status 404}
+    (fn [client]
+      (let [{:keys [exit err]} (run-shell! client {:operation :shell
+                                                   :host op/usb-console-address})]
+        (is (= op/exit-failure exit))
+        (is (str/includes? err "probetron:"))
+        (is (nil? (recorded-argv client)) "no SSH invocation follows a failed key fetch")))))
+
 (defn with-client!
   "Give the body a temporary client home, a fake rig key, and a fake SSH executable."
   [{:keys [key-status] :as answers} body]
@@ -191,6 +224,27 @@
                             (swap! calls conj {:argv (vec argv) :opts opts :result result})
                             result))})
         exit (binding [*out* out *err* err] (session/execute! operation runtime))]
+    {:exit exit :out (str out) :err (str err) :calls calls}))
+
+(defn run-shell!
+  "Open one interactive shell against the fake rig and return everything it wrote.
+
+   The fake SSH executable reads standard input, so the recorded call keeps the
+   streams the client asked for while the run itself takes none of the terminal."
+  [client operation]
+  (let [out (StringWriter.)
+        err (StringWriter.)
+        calls (atom [])
+        runtime (session/runtime
+                 {:env {"XDG_CACHE_HOME" (:home client)}
+                  :fetch! (:fetch! client)
+                  :executables {:ssh (:ssh client)}
+                  :run! (fn [argv opts]
+                          (let [result @(process/process argv (merge {:throw false} opts
+                                                                     {:in "" :out :string :err :string}))]
+                            (swap! calls conj {:argv (vec argv) :opts opts :result result})
+                            result))})
+        exit (binding [*out* out *err* err] (shell/open! operation runtime))]
     {:exit exit :out (str out) :err (str err) :calls calls}))
 
 (defn recorded-argv

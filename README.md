@@ -2,6 +2,7 @@
 
 Probetron turns one Raspberry Pi 4B into a network appliance for one physically connected RP2350 device under test.
 Lab clients on macOS and Linux flash firmware, erase or reset the target, debug it over DAP, read RTT logs, and bridge the DUT serial channel without an interactive login shell on the Pi.
+One USB-C cable carries a console of its own, so a rig that the lab network cannot reach is still diagnosed by hand.
 
 The project stays project-agnostic, so a rig serves whatever RP2350 board is wired to it.
 The first target is a piezo-driver setup where a Pico 2 W is the RP2350 DUT, but nothing here knows that.
@@ -162,6 +163,33 @@ A static address without a reservation needs a rebuilt image that carries its ow
 
 Every client command then names that address with `--host` or `PROBETRON_HOST`.
 
+## Reach a rig over USB
+
+Every rig answers on its USB-C receptacle as well as on the LAN.
+That receptacle runs in peripheral mode, so the rig presents itself to a laptop as one USB Ethernet device, holds `192.168.99.1` on that link, and leases the client an address of its own.
+One cable is therefore the whole path: no lab network, no DHCP server of yours, no address to look up, and no way to reach the wrong Pi, because the link has exactly two ends.
+
+```sh
+probetron shell --usb          # an interactive login on the rig
+probetron info --usb           # or any other command, over the same cable
+```
+
+`--usb` replaces `--host` on every command.
+The rig never routes for the client: its DHCP server emits no router and no name server, so the internet of the client stays where it was.
+
+```sh
+probetron shell --usb
+probetron@probetron:~$ networkctl status eth0
+probetron@probetron:~$ journalctl -b -u systemd-networkd
+```
+
+`shell` is the one command that hands the terminal of the operator straight to the rig, and it exists for the case that every other command cannot serve: a rig that answers nothing on the LAN.
+Reading `journalctl` there is the only post-mortem a rig has, because the journal lives in memory and dies with its boot.
+
+The cable carries power as well as data.
+A laptop port that holds up a Raspberry Pi 4 runs the rig on its own, and a port that browns out asks for 5 V on header pins 2 and 6 from the ordinary supply, with the USB-C cable left for data.
+The four USB-A receptacles belong to another controller, so the DUT keeps its own cable and its own rules throughout.
+
 ## Install the client
 
 The client is the release archive plus Babashka, and it never needs privilege.
@@ -186,7 +214,10 @@ probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]
 probetron reset   --host <host>
 probetron connect --host <host> --channel <usb|uart> [--baud <baud>] [--usb-wait-seconds <seconds>] [--local-port <port>] [--rtt <elf> --chip <chip> [--speed-khz <speed>]] [--pty] [--reset-on-exit]
 probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]
+probetron shell   --host <host> | --usb
 ```
+
+`--usb` replaces `--host` on every command and names the rig on its USB console cable, which needs no lab network at all.
 
 Target-specific values also come from ordinary environment variables, and an explicit option always wins.
 
@@ -369,6 +400,19 @@ The server accepts one DAP client after another, so an editor disconnects and co
 Only ending `probetron debug` releases the target.
 
 Everything project-specific travels inside the DAP request rather than on the rig command line, because the rig knows no project: the chip, the SWD speed, the ELF, the SVD, and the source layout all belong to the editor configuration on the client.
+
+### shell
+
+```sh
+probetron shell --usb
+probetron shell --host probetron.lab
+```
+
+`shell` opens one interactive login on the rig and gives back the status of that login.
+It fetches the rig key exactly as every other command does, asks SSH for a terminal, and names no remote command, so the login shell of the `probetron` account answers.
+It takes no target lock, so a running session of somebody else keeps the DUT while an operator reads the rig.
+
+The other commands on this page are the whole of the operating surface, and this one is the diagnostic surface: it reaches the rig and never the target.
 
 ## Debug from an editor
 
@@ -635,7 +679,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 
 ### The image
 
-`image/config/probetron.yaml` selects the Raspberry Pi 4 device, the `image-rpios` layout, and five named layers, and each layer owns exactly one runtime invariant.
+`image/config/probetron.yaml` selects the Raspberry Pi 4 device, the `image-rpios` layout, and six named layers, and each layer owns exactly one runtime invariant.
 
 | Layer                 | Runtime invariant                                                                                                                                                      |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -644,6 +688,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 | `probetron-hardware`  | The one DUT slot exists and belongs to nobody else: SPI0, UART0 on GPIO14 and GPIO15 with no console, GPIO26 free, and udev rules that reserve every target device.    |
 | `probetron-immutable` | The rig stores nothing: read-only root and boot, sized tmpfs for every writable path, and a journal that dies with its boot.                                           |
 | `probetron-offline`   | The rig asks the internet for nothing: no package timer, no time synchronisation, no radio, and no multicast discovery.                                                |
+| `probetron-console`   | The rig answers on one cable whatever the lab network does: the USB-C receptacle in peripheral mode, one Ethernet gadget, a fixed address, and a DHCP server for the client. |
 
 | Volatile path    | Bound                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------ |
@@ -674,6 +719,9 @@ The lab LAN is the whole authentication trust boundary, and the rig states that 
 Anybody who reaches the rig over the LAN downloads its private key from `http://<host>/probetron_key` and becomes `probetron`.
 Man-in-the-middle protection and protection from other lab-LAN users are deliberately absent, and so is any defence against a hostile authenticated user.
 Put the rig on a lab network you trust, and do not route it to a network you do not.
+
+The USB console holds the same boundary at the same height: a machine plugged into the USB-C receptacle fetches that key over the gadget link and becomes `probetron` too.
+Physical access to the receptacle is therefore access to the rig, which is the trade this appliance already makes for the LAN, and it is what lets an operator reach a rig that answers nothing else.
 
 What the rig does protect is the target and itself.
 
@@ -706,6 +754,8 @@ The recovery from all of them is the same: reboot the rig, and the volatile lock
 | `cannot fetch the rig key from http://<host>/probetron_key`      | the rig is unreachable, or the key service is down                                                      | ping the address, check the wired LAN and the DHCP reservation, and check `probetron-key.service` on the rig                                                             |
 | `the cached rig key ... has unsafe permissions`                  | something widened the cache file                                                                        | `chmod 600` that file or remove it; the next operation fetches the key again                                                                                             |
 | `the SSH connection to <host> failed` (status 255)               | the address, the LAN, or a rig that has not booted                                                      | confirm the address, retry after boot, and download the key again in case the rig was reflashed                                                                          |
+| the rig takes no address and answers nothing on the LAN           | the DHCP server was not up, leases only known hardware, or the link is dead                             | plug one USB-C cable into the rig and run `probetron shell --usb`, then read `networkctl status eth0` and `journalctl -b -u systemd-networkd` there                      |
+| the USB console itself never appears                             | the receptacle carries power alone, the port browns out, or the rig never reached userspace              | check that the cable carries data, feed 5 V into header pins 2 and 6 instead, and treat a silent gadget as a rig that is not booting                                     |
 | the endpoint prints but nothing connects                         | the forward never came up, or nothing listens behind it                                                 | the session ends by itself when the forward fails; otherwise check `--local-port` for a port already in use on the client                                                |
 | `the rig is busy with <command> (pid ...) since ...` (status 75) | another operation owns the target                                                                       | run `probetron status`, wait for that operation, or end it on the client that started it                                                                                 |
 | status 69 with a named missing resource                          | the rig image or the wiring lacks that resource                                                         | follow the repair in the diagnostic; every one of them names the resource and the fix                                                                                    |
@@ -807,7 +857,7 @@ A release archive carries every source file except `provisioning/`, because a cl
 | `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                    |
 | `image/pins.edn`                         | every pinned revision, archive, and digest of the rig image        |
 | `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance               |
-| `image/layer/`                           | the five named appliance layers and their `.rootfs-overlay/` trees |
+| `image/layer/`                           | the six named appliance layers and their `.rootfs-overlay/` trees  |
 | `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                |
 | `VERSION`                                | the release version, which `probetron.version` repeats             |
 

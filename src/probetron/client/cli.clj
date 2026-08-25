@@ -4,7 +4,7 @@
             [probetron.frontend :as frontend]
             [probetron.operation :as op]))
 
-(declare front-end help-text command-specs command-usage environment-lines)
+(declare front-end help-text commands command-specs command-usage environment-lines)
 
 (defn parse
   "Turn a public argv into an action map.
@@ -40,18 +40,33 @@
    (str "  PROBETRON_SPEED_KHZ         default for --speed-khz (" op/default-speed-khz ")")
    (str "  PROBETRON_UART_BAUD         default for --baud (" op/default-baud ")")
    (str "  PROBETRON_USB_WAIT_SECONDS  default for --usb-wait-seconds ("
-        op/default-usb-wait-seconds ")")])
+        op/default-usb-wait-seconds ")")
+   ""
+   (str "--usb names the rig at " op/usb-console-address
+        " on the USB console cable, which needs no lab network.")])
+
+(def commands
+  "Every public command, in help order.
+
+   The client carries one command that the rig entry point does not: a shell
+   over the USB console, which is how an operator reaches a rig that the lab
+   network cannot see."
+  (conj frontend/commands :shell))
 
 (def command-specs
-  "The options that each public command accepts."
+  "The options that each public command accepts.
+
+   --usb names the rig on the USB console, so every command takes it."
   (let [value frontend/value-option
         flag frontend/flag-option]
-    {:info {:host value :format value}
-     :status {:host value :format value}
-     :flash {:host value :chip value :speed-khz value}
-     :erase {:host value :chip value :speed-khz value}
-     :reset {:host value}
+    {:info {:host value :usb flag :format value}
+     :status {:host value :usb flag :format value}
+     :flash {:host value :usb flag :chip value :speed-khz value}
+     :erase {:host value :usb flag :chip value :speed-khz value}
+     :reset {:host value :usb flag}
+     :shell {:host value :usb flag}
      :connect {:host value
+               :usb flag
                :channel value
                :baud value
                :usb-wait-seconds value
@@ -61,7 +76,7 @@
                :speed-khz value
                :pty flag
                :reset-on-exit flag}
-     :debug {:host value :local-port value :reset-on-exit flag}}))
+     :debug {:host value :usb flag :local-port value :reset-on-exit flag}}))
 
 (def command-usage
   "The documented form of every public command."
@@ -73,7 +88,8 @@
    :connect (str "  probetron connect --host <host> --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--local-port <port>]"
                  " [--rtt <elf> --chip <chip> [--speed-khz <speed>]] [--pty] [--reset-on-exit]")
-   :debug "  probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]"})
+   :debug "  probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]"
+   :shell "  probetron shell   --host <host> | --usb"})
 
 (def front-end
   "How the public command line reaches the operation model.
@@ -82,6 +98,7 @@
    client path that validation probes before the operation leaves."
   {:program "probetron"
    :help-text help-text
+   :commands commands
    :command-specs command-specs
    :command-usage command-usage
    :use-env? true

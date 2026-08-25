@@ -52,7 +52,7 @@
 (def layer-names
   "Every named layer, in the order that the README maps to runtime invariants."
   ["probetron-runtime" "probetron-access" "probetron-hardware"
-   "probetron-immutable" "probetron-offline"])
+   "probetron-immutable" "probetron-offline" "probetron-console"])
 
 (def build-directory
   "The only directory that a finished image and its checksum appear in."

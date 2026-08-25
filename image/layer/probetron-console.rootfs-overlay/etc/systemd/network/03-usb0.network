@@ -1,0 +1,27 @@
+# The out-of-band console link.
+#
+# The rig owns both ends of policy here: it holds the fixed address that --usb
+# names, and it leases the client one address of its own, so a laptop reaches
+# the rig with one cable, no lab network, and no configuration.
+#
+# EmitRouter=no keeps the client routing table alone. A rig that offered itself
+# as a default route would take the whole internet of the client onto a cable
+# that reaches one Raspberry Pi.
+
+[Match]
+Name=usb0
+
+[Network]
+Address=192.168.99.1/24
+DHCPServer=yes
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+LLMNR=no
+MulticastDNS=no
+
+[DHCPServer]
+PoolOffset=100
+PoolSize=8
+EmitRouter=no
+EmitDNS=no
+EmitNTP=no

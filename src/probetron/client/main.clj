@@ -5,6 +5,7 @@
             [clojure.java.io :as io]
             [probetron.client.cli :as cli]
             [probetron.client.session :as session]
+            [probetron.client.shell :as shell]
             [probetron.client.tunnel :as tunnel]
             [probetron.operation :as op]))
 
@@ -38,9 +39,10 @@
    A long session holds the rig target until the client lets go, and every
    short operation finishes inside one remote command."
   [operation runtime]
-  (if (contains? tunnel/operations (:operation operation))
-    (tunnel/open! operation runtime)
-    (session/execute! operation runtime)))
+  (cond
+    (= :shell (:operation operation)) (shell/open! operation runtime)
+    (contains? tunnel/operations (:operation operation)) (tunnel/open! operation runtime)
+    :else (session/execute! operation runtime)))
 
 (defn elf-facts
   "Probe a local ELF path for the pure validators."

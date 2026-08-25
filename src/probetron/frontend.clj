@@ -11,15 +11,16 @@
             [probetron.operation :as op]
             [probetron.version :as version]))
 
-(declare command-help parse-command option-message)
+(declare front-end-commands command-help parse-command option-message)
 
 (def commands
   "The commands that both front ends carry, in help order."
   [:info :status :flash :erase :reset :connect :debug])
 
-(def command-names
-  "The command names as a command line types them."
-  (into {} (map (juxt name identity)) commands))
+(defn command-names
+  "Return the command names of one front end, as a command line types them."
+  [front-end]
+  (into {} (map (juxt name identity)) (front-end-commands front-end)))
 
 (def value-option {:coerce :string})
 (def flag-option {:coerce :boolean})
@@ -42,7 +43,7 @@
       {:action :version :text (str program " " version/probetron-version) :exit op/exit-ok}
 
       :else
-      (if-let [command (command-names head)]
+      (if-let [command ((command-names front-end) head)]
         (if (some #{"--help" "-h"} remaining)
           {:action :help :text (command-help front-end command) :exit op/exit-ok}
           (parse-command front-end command (vec remaining) context))
@@ -52,8 +53,16 @@
 
 (defn usage-lines
   "Return one usage line for every command of one front end."
-  [{:keys [command-usage]}]
-  (map command-usage commands))
+  [{:keys [command-usage] :as front-end}]
+  (map command-usage (front-end-commands front-end)))
+
+(defn front-end-commands
+  "Return the commands of one front end, in help order.
+
+   A front end that carries a command of its own states its whole list, and
+   every other one takes the commands that both entry points share."
+  [front-end]
+  (:commands front-end commands))
 
 (defn command-help
   "Return the help of one command."

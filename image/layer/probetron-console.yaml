@@ -1,0 +1,26 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-console
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Desc: The out-of-band console. Puts the USB-C receptacle in
+#  peripheral mode, presents one USB Ethernet gadget, and gives that link a
+#  fixed address and a DHCP server of its own, so a client reaches a rig that
+#  the lab network cannot see.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: probetron-runtime,rpi-boot-firmware
+# X-Env-Layer-RequiresProvider: probetron-appliance
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    # The USB-C receptacle carries power and one USB device. dwc2 drives it,
+    # and dr_mode=peripheral is what makes the rig the device rather than the
+    # host. The four USB-A receptacles belong to another controller, so the DUT
+    # cable is untouched by this.
+    - |-
+      set -eu
+      cat >> "$1/boot/firmware/config.txt" <<'EOCONFIG'
+
+      # Probetron: the out-of-band console on the USB-C receptacle.
+      [all]
+      dtoverlay=dwc2,dr_mode=peripheral
+      EOCONFIG

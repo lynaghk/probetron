@@ -189,3 +189,19 @@
   (is (= {:operation :debug :host "pi" :local-port 3333 :reset-on-exit? true}
          (operation ["debug" "--host" "pi" "--local-port" "3333" "--reset-on-exit"])))
   (is (str/includes? (usage-error ["debug" "--host" "pi" "--pty"]) "--pty")))
+
+(deftest the-usb-console-carries-a-shell-and-a-fixed-address
+  (testing "a shell over the USB console needs no host at all"
+    (is (= {:operation :shell :host operation/usb-console-address}
+           (operation ["shell" "--usb"]))))
+  (testing "a shell over the lab network names its rig"
+    (is (= {:operation :shell :host "pi.lab"} (operation ["shell" "--host" "pi.lab"]))))
+  (testing "--usb resolves the host of every other command too"
+    (is (= operation/usb-console-address (:host (operation ["reset" "--usb"]))))
+    (is (= operation/usb-console-address (:host (operation ["info" "--usb"])))))
+  (testing "--usb and --host would name two rigs at once"
+    (is (str/includes? (usage-error ["shell" "--usb" "--host" "pi.lab"]) "--usb")))
+  (testing "a shell that names no rig at all says how to name one"
+    (is (str/includes? (usage-error ["shell"]) "--host")))
+  (testing "a shell takes no argument of its own"
+    (is (str/includes? (usage-error ["shell" "--usb" "extra"]) "unexpected argument"))))

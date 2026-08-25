@@ -46,3 +46,4 @@ layer:
   hardware: probetron-hardware
   immutable: probetron-immutable
   offline: probetron-offline
+  console: probetron-console
