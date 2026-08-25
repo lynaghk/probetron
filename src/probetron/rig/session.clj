@@ -1,10 +1,11 @@
 (ns probetron.rig.session
-  "Imperative shell of the locked byte and RTT session.
+  "Imperative shell of the locked byte, RTT, and DAP sessions.
 
-   connect already owns the target lock when it runs, so it opens the one DUT
-   byte channel, publishes it on Pi loopback alone, decodes RTT beside it when
-   the client asked for it, and holds the target until the outer SSH command
-   ends.
+   connect and debug already own the target lock when they run, so each one
+   publishes its service on Pi loopback alone and holds the target until the
+   outer SSH command ends: connect opens the DUT byte channel and decodes RTT
+   beside it when the client asked for it, while debug serves the probe-rs DAP
+   protocol across one DAP client after another.
    Every device, executable, and volatile path arrives in the runtime, so a
    test substitutes a temporary appliance for the fixed one."
   (:require [probetron.rig.hardware :as hardware]
@@ -12,12 +13,13 @@
             [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
-(declare connect! required-resources with-rtt-upload! bridge! start-bridge! start-decoder!
-         channel-status! await-device! await-bridge! helper-options)
+(declare connect! debug! required-resources with-rtt-upload! bridge! start-bridge! start-decoder!
+         start-server! swd-device announce-probe! channel-status! await-device! await-service!
+         services helper-options)
 
 (def operations
   "The long sessions that this shell carries out."
-  #{:connect})
+  #{:connect :debug})
 
 (def device-poll-ms
   "How often the session looks for the DUT USB device while it waits for it."
@@ -27,7 +29,8 @@
   "Carry out one long session that already owns the target."
   [operation session]
   (case (:operation operation)
-    :connect (connect! operation session)))
+    :connect (connect! operation session)
+    :debug (debug! operation session)))
 
 (defn connect!
   "Bridge the DUT byte channel, decode the optional RTT beside it, and hold the target.
@@ -41,11 +44,50 @@
           (with-rtt-upload! operation runtime #(bridge! operation session %))
           (bridge! operation session nil)))))
 
+(defn debug!
+  "Serve the DAP protocol on Pi loopback and hold the target across every client of it.
+
+   Discovery accepts only the udev-named SWD bus, so a DAP client request that
+   names a probe reaches that one bus and no other SPI device of the Pi, and
+   the rig announces the selector that such a request repeats."
+  [operation session]
+  (let [runtime (:runtime session)]
+    (or (target/missing-status runtime (required-resources operation))
+        (if-let [device (swd-device runtime)]
+          (do (announce-probe! device)
+              (await-service! (start-server! session) :dap
+                              (:hardware runtime) (:stopping? session)))
+          (runner/fail! (hardware/missing-resource-message
+                         :swd-spi-device (hardware/resource-path runtime :swd-spi-device)))))))
+
+(defn swd-device
+  "Return the one SWD SPI device that the rig discovered, or nil when it has none."
+  [{:keys [hardware filesystem]}]
+  (first (sort ((:glob filesystem) (:swd-spi-device hardware)))))
+
+(defn announce-probe!
+  "Name the probe selector and the protocol that a DAP client request repeats."
+  [device]
+  (println (str "probe: " (hardware/spi-probe-selector device) " " hardware/swd-protocol))
+  (flush))
+
+(defn start-server!
+  "Start the multi-session probe-rs DAP server that publishes DAP on Pi loopback.
+
+   The server keeps listening for as long as the outer rig operation lives, so
+   an editor disconnects and connects again without releasing the target lock
+   and without resetting the DUT."
+  [{:keys [runtime start-helper!]}]
+  (let [{:keys [executables hardware]} runtime]
+    (start-helper! (hardware/dap-command executables hardware) helper-options)))
+
 (defn required-resources
-  "Return the rig resources that one connect session needs before it opens anything."
-  [{:keys [rtt]}]
-  (cond-> [:socat]
-    rtt (into [:probe-rs :spi-device])))
+  "Return the rig resources that one session needs before it opens anything."
+  [{:keys [operation rtt]}]
+  (case operation
+    :connect (cond-> [:socat]
+               rtt (into [:probe-rs :spi-device]))
+    :debug [:probe-rs]))
 
 (defn with-rtt-upload!
   "Receive and validate the bounded RTT ELF, then run the body that owns it.
@@ -69,7 +111,7 @@
     (or (channel-status! operation runtime)
         (let [bridge (start-bridge! operation session)]
           (when rtt-path (start-decoder! operation session rtt-path))
-          (await-bridge! bridge hardware (:stopping? session))))))
+          (await-service! bridge :byte hardware (:stopping? session))))))
 
 (defn start-bridge!
   "Start the rig byte listener that publishes the DUT channel on Pi loopback.
@@ -125,18 +167,24 @@
         (Thread/sleep device-poll-ms)
         (recur)))))
 
-(defn await-bridge!
-  "Hold the target for as long as the byte listener lives.
+(defn await-service!
+  "Hold the target for as long as the loopback service of one session lives.
 
-   Cleanup owns the decoder, so a decoder that stops never closes the bridge,
-   and a listener that stops never leaves the lock behind.
-   A listener that cleanup itself reaped ended the session it served, so it
+   Cleanup owns every other child, so an RTT decoder that stops never closes
+   the byte bridge, and a service that stops never leaves the lock behind.
+   A service that cleanup itself reaped ended the session it served, so it
    reports success rather than a service that failed."
-  [bridge {:keys [loopback byte-port]} stopping?]
-  (let [exit (.waitFor ^Process (:proc bridge))]
+  [helper service hardware stopping?]
+  (let [{:keys [name program port]} (services service)
+        exit (.waitFor ^Process (:proc helper))]
     (if (or (zero? exit) (stopping?))
       op/exit-ok
-      (do (runner/warn! (str "the byte service on " loopback ":" byte-port
-                             " stopped with socat exit " exit
+      (do (runner/warn! (str "the " name " on " (:loopback hardware) ":" (get hardware port)
+                             " stopped with " program " exit " exit
                              ": check that no other operation already listens there"))
           op/exit-failure))))
+
+(def services
+  "How each long session names the loopback service that holds the target."
+  {:byte {:name "byte service" :program "socat" :port :byte-port}
+   :dap {:name "DAP service" :program "probe-rs" :port :dap-port}})

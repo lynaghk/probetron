@@ -19,7 +19,7 @@
 (declare default-runtime default-paths default-executables default-filesystem default-hardware
          own-target! report-status! probe-lock acquire-lock! handshake! release-lock!
          register-cleanup! session start-helper! clean-up! stop-groups! signal-group! await-exit!
-         run-reset! write-active! read-owner! delete-active! write-atomically!
+         run-reset! write-active! read-owner! delete-active! write-atomically! glob-paths
          report-busy! fail! warn!)
 
 (def terminate-grace-ms
@@ -266,6 +266,7 @@
   {:directory? (fn [path] (fs/directory? path))
    :exists? (fn [path] (fs/exists? path))
    :readable? (fn [path] (fs/readable? path))
+   :glob (fn [pattern] (glob-paths pattern))
    :read-file (fn [path] (when (fs/exists? path) (slurp (fs/file path))))
    :write-file! (fn [path text] (write-atomically! path text))
    :delete-file! (fn [path] (fs/delete-if-exists path))})
@@ -282,6 +283,12 @@
    :spawn! (fn [argv opts] (process/process argv opts))
    :run! (fn [argv opts]
            @(process/process argv (merge {:out :inherit :err :inherit :throw false} opts)))})
+
+(defn glob-paths
+  "Return every existing path that one absolute glob pattern names."
+  [pattern]
+  (let [path (fs/path pattern)]
+    (mapv str (fs/glob (fs/parent path) (str (fs/file-name path))))))
 
 (defn write-atomically!
   "Write a file through a temporary neighbour, so a reader never sees half a record."

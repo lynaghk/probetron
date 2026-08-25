@@ -125,7 +125,7 @@
   (let [client (fixture/client! {})]
     (try
       (let [session (process/process ["bb" "-m" "probetron.client.tunnel-fixture"
-                                      (:directory client)]
+                                      (:directory client) "connect"]
                                      {:out :string :err :string})
             pids (into {} (map (fn [name] [name (fixture/await-pid! client name)]))
                        fixture/programs)]

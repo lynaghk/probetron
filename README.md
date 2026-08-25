@@ -29,7 +29,7 @@ Everything it owns lives under `probetron/`.
 | `src/probetron/rig/main.clj`        | imperative shell of the rig                                       |
 | `src/probetron/rig/runner.clj`      | imperative shell that owns the target lock and the process groups |
 | `src/probetron/rig/target.clj`      | imperative shell of `info`, `flash`, `erase`, and `reset`         |
-| `src/probetron/rig/session.clj`     | imperative shell of the locked `connect` session                  |
+| `src/probetron/rig/session.clj`     | imperative shell of the locked `connect` and `debug` sessions     |
 | `test/probetron/`                   | `clojure.test` namespaces that the runner discovers               |
 | `VERSION`                           | the release version, which `probetron.version` repeats            |
 
@@ -212,6 +212,7 @@ The one DUT slot never moves, so the rig inlines it.
 | ---------------------- | ------------------------- |
 | SPI device             | `/dev/spidev0.0`          |
 | probe selector         | `0:0:/dev/spidev0.0`      |
+| SWD SPI alias          | `/dev/spidev_swd*`        |
 | GPIO chip and RUN line | `/dev/gpiochip0`, GPIO26  |
 | UART device            | `/dev/ttyAMA0`            |
 | DUT USB device         | `/dev/probetron-dut`      |
@@ -283,10 +284,41 @@ The decoder and the listener are two owned process groups that know nothing of e
 The session ends when its listener ends, when the client disconnects, or when a handled signal arrives.
 Cleanup then removes both process groups and the RTT upload, and it leaves the target alone unless `--reset-on-exit` asked for one best-effort reset.
 
+## DAP sessions
+
+`debug` owns the target until the outer SSH command ends.
+It discovers the SWD bus, announces the probe selector that a DAP client request repeats, and serves DAP on Pi loopback alone.
+
+```text
+probe: 0:0:/dev/spidev_swd0 swd
+probe-rs dap-server --port 50000 --ip 127.0.0.1
+```
+
+Discovery accepts `/dev/spidev_swd*` alone, which the image udev rule gives to the one SPI bus that carries SWD, so a request that names a probe reaches that bus and no other SPI device of the Pi.
+probe-rs serves one DAP client after another whenever `--single-session` is absent, so an editor disconnects and connects again while the rig keeps the target lock and the DUT keeps its state.
+Chip, speed, ELF, SVD, source, launch, and attach configuration all travel inside the DAP client request, which is what lets the probe-rs editor integration upload a client-local ELF and resolve client-local source against a rig that knows no project.
+
+The client forwards that server to one client loopback port and prints the endpoint that an editor connects to.
+
+```sh
+ssh -i <cache> -T \
+  -o BatchMode=yes ... -o LogLevel=ERROR \
+  -L 127.0.0.1:45678:127.0.0.1:50000 -o ExitOnForwardFailure=yes \
+  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig debug'
+```
+
+```text
+tcp://127.0.0.1:45678
+```
+
+`--local-port` names that port and a session without one reserves a free ephemeral port, exactly as `connect` does.
+The outer SSH process then lives until the client ends it, so no DAP disconnect ever releases the target lock.
+Cleanup reaps the whole DAP process group and leaves the target alone, unless `--reset-on-exit` asked for one best-effort reset, which runs after that group has stopped.
+
 ## Current state
 
 The operation model, both command lines, and both entry points parse, validate, and refuse malformed input.
 The rig owns the target lock, the active record, and the process groups of one operation, and `status` reports what owns the target.
-`info`, `flash`, `erase`, `reset`, and `connect` drive the hardware, while `debug` still reports the operation it holds the target for.
+`info`, `flash`, `erase`, `reset`, `connect`, and `debug` drive the hardware.
 The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said.
-It also opens the `connect` session, publishes the rig byte service on a client loopback port, and presents it as a pseudo-terminal when it can, while `debug` still names the remote command it would have run.
+It also opens the `connect` and `debug` sessions, publishes the rig byte service or the rig DAP server on a client loopback port, and presents the byte service as a pseudo-terminal when it can.

@@ -7,7 +7,7 @@
    Nothing here opens a device, a file, or a process."
   (:require [probetron.operation :as op]))
 
-(declare probe-command resources)
+(declare probe-command spi-probe-selector resources)
 
 ;; The absolute path of every hardware executable of the image.
 (def probe-rs-executable "/usr/local/bin/probe-rs")
@@ -16,7 +16,9 @@
 
 ;; The one target slot, wired as the README table describes.
 (def spi-device "/dev/spidev0.0")
-(def probe-selector "0:0:/dev/spidev0.0")
+(def spi-selector-prefix "0:0:")
+(def probe-selector (str spi-selector-prefix spi-device))
+(def swd-spi-device "/dev/spidev_swd*")
 (def gpio-chip "/dev/gpiochip0")
 (def run-gpio 26)
 (def uart-device "/dev/ttyAMA0")
@@ -55,6 +57,7 @@
   "The fixed hardware of the appliance, which a test replaces value by value."
   {:probe-selector probe-selector
    :spi-device spi-device
+   :swd-spi-device swd-spi-device
    :gpio-chip gpio-chip
    :run-gpio run-gpio
    :uart-device uart-device
@@ -88,6 +91,27 @@
    keeps whatever state it had."
   [executables hardware {:keys [chip speed-khz path]}]
   (conj (probe-command executables hardware "attach" {:chip chip :speed-khz speed-khz}) path))
+
+(defn dap-command
+  "Return the argv of the probe-rs DAP server that one debug session serves.
+
+   The server binds Pi loopback alone, and it keeps listening after every DAP
+   client leaves, which is what probe-rs does whenever --single-session is
+   absent, so an editor disconnects and connects again while the rig holds the
+   target.
+   Chip, speed, ELF, SVD, source, launch, and attach configuration reach
+   probe-rs inside the DAP client request instead, so this argv names no
+   project value at all."
+  [{:keys [probe-rs]} {:keys [loopback dap-port]}]
+  [probe-rs "dap-server" "--port" (str dap-port) "--ip" loopback])
+
+(defn spi-probe-selector
+  "Return the probe selector of one discovered Linux SPI bus.
+
+   A DAP client request repeats it, so the operator names the bus that the rig
+   discovered rather than any other SPI device of the Pi."
+  [device]
+  (str spi-selector-prefix device))
 
 (defn byte-service-command
   "Return the argv of the rig byte listener.
@@ -151,6 +175,11 @@
                 :name "SPI device"
                 :repair (str "enable SPI0 in the rig image and wire SWCLK, SWDIO, and ground"
                              " to header pins 23, 21, 19, and 20")}
+   :swd-spi-device {:in :hardware
+                    :name "SWD SPI device"
+                    :repair (str "enable SPI0 in the rig image and reinstall the udev rule that"
+                                 " names the SWD bus, then wire SWCLK, SWDIO, and ground to"
+                                 " header pins 23, 21, 19, and 20")}
    :gpio-chip {:in :hardware
                :name "GPIO chip"
                :repair "reboot the rig and wire GPIO26 on header pin 37 to the DUT RUN line"}

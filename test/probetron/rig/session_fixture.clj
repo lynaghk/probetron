@@ -1,39 +1,49 @@
 (ns probetron.rig.session-fixture
-  "Temporary appliance that the byte and RTT session tests own.
+  "Temporary appliance that the byte, RTT, and DAP session tests own.
 
-   Every device is a file, every owned helper is a shell stand-in that records
-   its own process group and lives until a test releases the session, and the
-   reset is a log line, so a test observes exactly what the session started and
-   what cleanup removed.
+   Every device is a file, every owned helper is a stand-in that records its
+   own process group and lives until a test releases the session, and the reset
+   is a log line, so a test observes exactly what the session started and what
+   cleanup removed.
+   The DAP stand-in listens for real on an ephemeral loopback port and survives
+   every client of it, which is how a test watches a session keep the target
+   across a DAP disconnect.
    Its -main holds one whole session in its own process, which is how a test
    reaches the handled signal path."
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [probetron.rig.fixture :as fixture]
             [probetron.rig.runner :as runner]
             [probetron.rig.session :as session])
   (:import (java.io ByteArrayInputStream)))
 
-(declare appliance! create-appliance! upload-stream spawn-adapter helper-name stand-in-command
-         record-reset! release! released? stop-all! recorded-pid await-pid! alive? signal!)
+(declare appliance! create-appliance! write-listener! listener-source device-names upload-stream
+         spawn-adapter helper-name stand-in-command record-reset! release! released? stop-all!
+         recorded-pid await-pid! await-file! alive? signal!)
 
 (def helper-names
-  "The stand-ins that replace the two children of a connect session."
-  ["bridge" "bridge-child" "rtt" "rtt-child"])
+  "The stand-ins that replace the owned children of each long session."
+  {:connect ["bridge" "bridge-child" "rtt" "rtt-child"]
+   :debug ["dap" "dap-child"]})
 
 (defn -main
-  "Hold one whole connect session in its own process until a signal arrives.
+  "Hold one whole long session in its own process until a signal arrives.
 
-   The test writes the RTT ELF into the directory first, so the session reads
-   the same bounded upload that a client would send."
-  [directory & flags]
-  (let [operation {:operation :connect
-                   :channel :uart
-                   :baud 115200
-                   :rtt {:chip "RP235x" :speed-khz 1000 :elf :stdin}
-                   :reset-on-exit? (boolean (some #{"--reset-on-exit"} flags))}]
-    (System/exit (runner/execute! operation (appliance! directory (atom []) {:stdin :file})))))
+   The test writes the RTT ELF into the directory first, so a connect session
+   reads the same bounded upload that a client would send."
+  [directory command & flags]
+  (let [reset-on-exit? (boolean (some #{"--reset-on-exit"} flags))
+        operation (case command
+                    "connect" {:operation :connect
+                               :channel :uart
+                               :baud 115200
+                               :rtt {:chip "RP235x" :speed-khz 1000 :elf :stdin}
+                               :reset-on-exit? reset-on-exit?}
+                    "debug" {:operation :debug :reset-on-exit? reset-on-exit?})
+        options {:stdin (when (= "connect" command) :file)}]
+    (System/exit (runner/execute! operation (appliance! directory (atom []) options)))))
 
 (defn appliance!
   "Create a temporary appliance and return the runtime that owns it."
@@ -48,6 +58,7 @@
                     :gpioset (path "gpioset")
                     :socat (path "socat")}
       :hardware (merge {:spi-device (path "spidev0.0")
+                        :swd-spi-device (path "spidev_swd*")
                         :gpio-chip (path "gpiochip0")
                         :uart-device (path "ttyAMA0")
                         :usb-device (path "probetron-dut")}
@@ -62,9 +73,39 @@
   "Give the temporary appliance every executable, device, and directory it needs."
   [directory]
   (fs/create-dirs (fs/path directory "uploads"))
-  (doseq [name ["probe-rs" "gpioset" "socat" "spidev0.0" "gpiochip0" "ttyAMA0" "probetron-dut"]]
+  (write-listener! directory)
+  (doseq [name device-names]
     (let [file (fs/path directory name)]
       (when-not (fs/exists? file) (fs/create-file file)))))
+
+(def device-names
+  "Every file that stands in for an executable or a device of the appliance."
+  ["probe-rs" "gpioset" "socat" "spidev0.0" "spidev_swd0" "gpiochip0" "ttyAMA0" "probetron-dut"])
+
+(defn write-listener!
+  "Write the multi-session listener that stands in for the probe-rs DAP server."
+  [directory]
+  (spit (fs/file (fs/path directory "dap-listener.clj")) listener-source))
+
+(def listener-source
+  "A DAP server stand-in that keeps listening after every client leaves.
+
+   It publishes the ephemeral port it took, records one line for every client
+   that connected and disconnected, and ends when a test releases the session."
+  (str/join "\n"
+            ["(let [directory (first *command-line-args*)"
+             "      server (java.net.ServerSocket. 0 4 (java.net.InetAddress/getByName \"127.0.0.1\"))]"
+             "  (future"
+             "    (loop []"
+             "      (with-open [socket (.accept server)]"
+             "        (.read (.getInputStream socket))"
+             "        (spit (str directory \"/dap.sessions\") \"session\\n\" :append true))"
+             "      (recur)))"
+             "  (spit (str directory \"/dap.port\") (str (.getLocalPort server)))"
+             "  (loop []"
+             "    (when-not (.exists (java.io.File. (str directory \"/stop\")))"
+             "      (Thread/sleep 50)"
+             "      (recur))))"]))
 
 (defn upload-stream
   "Return the standard input that carries one upload into the session."
@@ -89,28 +130,40 @@
         (process/process argv opts)))))
 
 (defn helper-name
-  "Name the appliance helper that one owned argv starts, or nil when it starts none."
+  "Name the appliance helper that one owned argv starts, or nil when it starts none.
+
+   Both probe-rs sessions run the same executable, so the verb tells the RTT
+   decoder and the DAP server apart."
   [directory argv]
   (when (< 1 (count argv))
     (condp = (second argv)
       (str (fs/path directory "socat")) "bridge"
-      (str (fs/path directory "probe-rs")) "rtt"
+      (str (fs/path directory "probe-rs")) (if (= "dap-server" (nth argv 2 nil)) "dap" "rtt")
       nil)))
 
 (defn stand-in-command
   "Return the stand-in that replaces one owned helper.
 
-   It records its own pid and the pid of a grandchild it leaves in the same
-   process group, then lives until a test releases the session."
+   Each one records its own pid and the pid of a grandchild it leaves in the
+   same process group, and only the DAP stand-in also serves loopback clients."
   [directory name]
   ["/bin/sh" "-c" (str "sleep 300 & echo $! > " directory "/" name "-child.pid; "
                        "echo $$ > " directory "/" name ".pid; "
-                       "while [ ! -f " directory "/stop ]; do sleep 0.05; done")])
+                       (if (= "dap" name)
+                         (str "exec bb " directory "/dap-listener.clj " directory)
+                         (str "while [ ! -f " directory "/stop ]; do sleep 0.05; done")))])
 
 (defn record-reset!
-  "Record that the optional reset on exit ran."
+  "Record that the optional reset on exit ran, and what was still alive when it did."
   [directory]
-  (spit (fs/file (fs/path directory "reset.log")) "reset\n" :append true))
+  (spit (fs/file (fs/path directory "reset.log"))
+        (str "reset"
+             (str/join (for [name (mapcat val helper-names)
+                             :let [pid (recorded-pid directory name)]
+                             :when pid]
+                         (str " " name "=" (if (alive? pid) "alive" "gone"))))
+             "\n")
+        :append true))
 
 (defn release!
   "Let every stand-in of one session end."
@@ -126,7 +179,7 @@
 (defn stop-all!
   "Make sure no stand-in survives a test, even one that never cleaned up."
   [directory]
-  (doseq [name helper-names]
+  (doseq [name (mapcat val helper-names)]
     (when-let [pid (recorded-pid directory name)]
       (signal! "-KILL" pid))))
 
@@ -149,6 +202,17 @@
       (when (pos? attempts)
         (Thread/sleep 10)
         (recur (dec attempts))))))
+
+(defn await-file!
+  "Wait until one file of the appliance carries text and return that text."
+  [directory name]
+  (let [file (fs/path directory name)]
+    (loop [attempts 1000]
+      (if (pos? (if (fs/exists? file) (fs/size file) 0))
+        (str/trim (slurp (fs/file file)))
+        (when (pos? attempts)
+          (Thread/sleep 10)
+          (recur (dec attempts)))))))
 
 (defn alive?
   "Tell whether a pid still runs."

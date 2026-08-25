@@ -6,6 +6,9 @@
    port, prints that endpoint, presents it as a pseudo-terminal when the client
    asked for one, and holds the session until the rig command ends or a
    handled signal arrives.
+   connect forwards the rig byte service and debug forwards the rig DAP
+   server, so an editor connects to the printed endpoint and disconnects from
+   it as often as it likes while the outer command keeps the rig target.
    Cleanup stops the local helpers alone, because only the rig ever touches
    the DUT: --reset-on-exit travels to the rig and never becomes a client
    action."
@@ -20,7 +23,7 @@
 
 (def operations
   "The client operations that hold the rig target until the client lets go."
-  #{:connect})
+  #{:connect :debug})
 
 (def terminate-grace-ms
   "How long a local helper has to answer the first ask before the client insists."
@@ -112,7 +115,8 @@
   "Return the fixed rig loopback port that one long operation publishes."
   [{:keys [operation]}]
   (case operation
-    :connect op/rig-byte-port))
+    :connect op/rig-byte-port
+    :debug op/rig-dap-port))
 
 (defn register-cleanup!
   "Register the cleanup that a handled client signal runs.

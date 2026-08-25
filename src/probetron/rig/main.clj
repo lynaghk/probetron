@@ -8,7 +8,7 @@
             [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
-(declare report! perform! unsupported! reset-target!)
+(declare report! perform! reset-target!)
 
 (defn -main
   "Parse the rig command line and carry out the requested operation."
@@ -29,26 +29,14 @@
                                                      :reset-target! reset-target!}))))
 
 (defn perform!
-  "Carry out one operation that already owns the target."
+  "Carry out one operation that already owns the target.
+
+   A long session holds the target until the outer SSH command ends, and every
+   other operation opens the hardware once."
   [operation handle]
-  (let [command (:operation operation)]
-    (cond
-      (contains? target/operations command) (target/perform! operation handle)
-      (contains? session/operations command) (session/perform! operation handle)
-      :else (unsupported! operation))))
-
-(defn unsupported!
-  "Report a long session that this rig cannot open yet.
-
-   The DAP session still has no backend, so the rig names the operation it
-   holds the target for and gives the target back."
-  [operation]
-  (runner/warn! (str "this rig has no session backend, so "
-                     (name (:operation operation)) " cannot run"))
-  (runner/warn! (str "the operation parsed as " (pr-str operation)))
-  (when (op/stdin-elf? operation)
-    (runner/warn! "the operation expects one ELF file on standard input"))
-  op/exit-failure)
+  (if (contains? session/operations (:operation operation))
+    (session/perform! operation handle)
+    (target/perform! operation handle)))
 
 (def reset-target!
   "Pulse the RUN line of the target after a session that asked for it."

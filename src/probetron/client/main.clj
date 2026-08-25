@@ -4,12 +4,11 @@
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
             [probetron.client.cli :as cli]
-            [probetron.client.command :as command]
             [probetron.client.session :as session]
             [probetron.client.tunnel :as tunnel]
             [probetron.operation :as op]))
 
-(declare environment elf-facts file-header report! execute! unsupported!)
+(declare environment elf-facts file-header report! execute!)
 
 (defn -main
   "Parse the public command line and carry out the requested operation."
@@ -29,26 +28,15 @@
     :run (execute! operation)))
 
 (defn execute!
-  "Carry out one validated operation."
-  [operation]
-  (let [command (:operation operation)
-        runtime (session/runtime)]
-    (cond
-      (contains? session/operations command) (session/execute! operation runtime)
-      (contains? tunnel/operations command) (tunnel/open! operation runtime)
-      :else (unsupported! operation))))
+  "Carry out one validated operation.
 
-(defn unsupported!
-  "Report a long session that this client cannot open yet.
-
-   The DAP session still has no client transport, so the client names the
-   remote command that the operation would have run."
+   A long session holds the rig target until the client lets go, and every
+   short operation finishes inside one remote command."
   [operation]
-  (binding [*out* *err*]
-    (println (str "probetron: this client has no session transport, so "
-                  (name (:operation operation)) " cannot reach " (:host operation)))
-    (println (str "probetron: the operation would run: " (command/remote-command operation))))
-  op/exit-failure)
+  (let [runtime (session/runtime)]
+    (if (contains? tunnel/operations (:operation operation))
+      (tunnel/open! operation runtime)
+      (session/execute! operation runtime))))
 
 (defn environment
   "Return the process environment as a plain map."

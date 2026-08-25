@@ -10,8 +10,8 @@
   (:import (java.io StringWriter)
            (java.util.concurrent TimeUnit)))
 
-(declare with-running-session! run-session! temporary-directory helper-call socat probe-rs
-         device start-fixture! await-exit! elapsed-ms)
+(declare with-running-session! run-session! reset-log temporary-directory helper-call socat
+         probe-rs device start-fixture! await-exit! elapsed-ms)
 
 (def uart-operation
   {:operation :connect :channel :uart :baud 115200 :rtt nil :reset-on-exit? false})
@@ -160,9 +160,9 @@
   (let [directory (temporary-directory)]
     (try
       (fs/write-bytes (fs/file (fs/path directory "rtt.elf")) (target-test/elf))
-      (let [rig (start-fixture! directory)
+      (let [rig (start-fixture! directory "connect")
             pids (into {} (map (fn [name] [name (fixture/await-pid! directory name)]))
-                       fixture/helper-names)]
+                       (:connect fixture/helper-names))]
         (is (every? some? (vals pids)) "both children run before the signal arrives")
         (fixture/signal! "-TERM" (.pid (:proc rig)))
         (await-exit! rig)
@@ -179,18 +179,22 @@
       (finally (fixture/stop-all! directory) (fs/delete-tree directory)))))
 
 (defn with-running-session!
-  "Start one connect session, wait until its bridge runs, and stop it after the body.
+  "Start one long session, wait until its first helper runs, and stop it after the body.
 
-   It returns what the session left behind once the outer operation ended."
+   The helper option names the stand-in that a session must start before the
+   body runs, and the result is what the session left behind once the outer
+   operation ended."
   [operation options body]
   (let [directory (temporary-directory)
+        helper (get options :helper "bridge")
         calls (atom [])
         out (StringWriter.)
         err (StringWriter.)
         runtime (fixture/appliance! directory calls options)
         session (binding [*out* out *err* err] (future (runner/execute! operation runtime)))]
     (try
-      (is (some? (fixture/await-pid! directory "bridge")) "the session must start its bridge")
+      (is (some? (fixture/await-pid! directory helper))
+          (str "the session must start its " helper))
       (body {:directory directory :calls calls :session session})
       (fixture/release! directory)
       {:status (deref session 15000 :timeout)
@@ -198,7 +202,8 @@
        :err (str err)
        :calls @calls
        :uploads (mapv str (fs/list-dir (fs/path directory "uploads")))
-       :reset? (fs/exists? (fs/path directory "reset.log"))}
+       :reset? (fs/exists? (fs/path directory "reset.log"))
+       :reset-log (reset-log directory)}
       (finally
         (fixture/release! directory)
         (deref session 15000 :timeout)
@@ -232,6 +237,12 @@
         (fixture/stop-all! directory)
         (fs/delete-tree directory)))))
 
+(defn reset-log
+  "Return what the optional reset on exit recorded, or nothing when it never ran."
+  [directory]
+  (let [file (fs/path directory "reset.log")]
+    (if (fs/exists? file) (slurp (fs/file file)) "")))
+
 (defn temporary-directory
   "Return a fresh directory that carries one temporary appliance."
   []
@@ -259,8 +270,8 @@
 
 (defn start-fixture!
   "Start the fixture rig that holds one whole session in its own process."
-  [directory]
-  (process/process ["bb" "-m" "probetron.rig.session-fixture" (str directory)]
+  [directory command]
+  (process/process ["bb" "-m" "probetron.rig.session-fixture" (str directory) command]
                    {:out :inherit :err :string}))
 
 (defn await-exit!

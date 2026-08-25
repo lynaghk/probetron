@@ -30,20 +30,26 @@
   ["ssh" "socat"])
 
 (defn -main
-  "Hold one whole connect session in its own client process until a signal arrives.
+  "Hold one whole long session in its own client process until a signal arrives.
 
-   The session asks for a pseudo-terminal, so a signal has both a local helper
-   and an outer SSH process to remove."
-  [directory & _flags]
+   A connect session asks for a pseudo-terminal, so a signal has both a local
+   helper and an outer SSH process to remove, while a debug session has the
+   outer SSH process alone."
+  [directory command & _flags]
   (let [client (client! {:directory directory})
-        operation {:operation :connect
-                   :host host
-                   :channel :uart
-                   :baud 115200
-                   :local-port nil
-                   :rtt nil
-                   :pty? true
-                   :reset-on-exit? false}]
+        operation (case command
+                    "connect" {:operation :connect
+                               :host host
+                               :channel :uart
+                               :baud 115200
+                               :local-port nil
+                               :rtt nil
+                               :pty? true
+                               :reset-on-exit? false}
+                    "debug" {:operation :debug
+                             :host host
+                             :local-port nil
+                             :reset-on-exit? false})]
     (System/exit (tunnel/open! operation (runtime! client (atom []))))))
 
 (defn client!
