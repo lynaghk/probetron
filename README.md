@@ -25,6 +25,7 @@ Everything it owns lives under `probetron/`.
 | `src/probetron/client/main.clj`     | imperative shell of the client                                    |
 | `src/probetron/client/key.clj`      | imperative shell that refreshes the cached rig key                |
 | `src/probetron/client/session.clj`  | imperative shell of the short client operations                   |
+| `src/probetron/client/tunnel.clj`   | imperative shell of the long client sessions                      |
 | `src/probetron/rig/main.clj`        | imperative shell of the rig                                       |
 | `src/probetron/rig/runner.clj`      | imperative shell that owns the target lock and the process groups |
 | `src/probetron/rig/target.clj`      | imperative shell of `info`, `flash`, `erase`, and `reset`         |
@@ -120,6 +121,42 @@ probe: 0:0:/dev/spidev0.0 swd
 ```
 
 `--format edn` prints the same facts as `{:client {:probetron ... :babashka ... :key ...} :rig {...}}`, where the rig map is the record that `probetron-rig info --format edn` wrote.
+
+## Client sessions
+
+`connect` holds the rig target until the client lets go.
+The client forwards the rig byte service to one client loopback port and prints where a host program finds it.
+
+```sh
+ssh -i <cache> -T \
+  -o BatchMode=yes ... -o LogLevel=ERROR \
+  -L 127.0.0.1:45678:127.0.0.1:5555 -o ExitOnForwardFailure=yes \
+  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig connect --channel uart --baud 115200'
+```
+
+```text
+tcp://127.0.0.1:45678
+```
+
+`--local-port` names that port, and a session without one reserves a free ephemeral port on the client loopback, so an ordinary session needs no port bookkeeping at all.
+The client prints the endpoint as soon as it starts SSH, so a host program has somewhere to go while the forward and the rig target are still opening.
+`ExitOnForwardFailure=yes` ends a whole session whose forward never appeared, so an endpoint that reaches nothing ends with its session instead of waiting for a host program.
+Both rig streams stay attached to the client, so probe-rs diagnostics and decoded RTT text arrive unchanged, while the optional RTT ELF travels the other way on standard input.
+
+`--pty` presents the same endpoint as a pseudo-terminal, which is what `screen`, `minicom`, and every other host program that wants a serial device asks for.
+
+```sh
+socat PTY,link=<link>,raw,echo=0,wait-slave TCP:127.0.0.1:45678,retry=30,interval=1
+```
+
+The link lives in a private volatile directory that nobody else may enter, and the client prints its path under the TCP endpoint.
+socat waits for a host program to open the terminal before it connects, so nothing occupies the one rig byte client until somebody reads DUT bytes.
+A client without socat keeps the whole session, names the packages that install socat, and leaves the printed TCP endpoint usable.
+A pseudo-terminal that closes is a lost presentation alone: the client says so, and the session keeps the target.
+
+Cleanup runs once, whether the rig command ended or `SIGINT`, `SIGTERM`, or `SIGHUP` arrived.
+It stops the pseudo-terminal helper, removes the private link directory, and ends the outer SSH process, which hangs the remote command up and is what gives the target lock back.
+The client itself never touches the DUT, because `--reset-on-exit` travels to the rig inside the remote command alone.
 
 ## Rig protocol
 
@@ -251,4 +288,5 @@ Cleanup then removes both process groups and the RTT upload, and it leaves the t
 The operation model, both command lines, and both entry points parse, validate, and refuse malformed input.
 The rig owns the target lock, the active record, and the process groups of one operation, and `status` reports what owns the target.
 `info`, `flash`, `erase`, `reset`, and `connect` drive the hardware, while `debug` still reports the operation it holds the target for.
-The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said, while `connect` and `debug` still name the remote command they would have run.
+The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said.
+It also opens the `connect` session, publishes the rig byte service on a client loopback port, and presents it as a pseudo-terminal when it can, while `debug` still names the remote command it would have run.

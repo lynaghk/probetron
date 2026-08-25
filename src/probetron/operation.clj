@@ -34,6 +34,11 @@
 (def channels [:usb :uart])
 (def formats [:text :edn])
 
+;; The loopback services that one locked rig session publishes and one client forwards.
+(def rig-loopback "127.0.0.1")
+(def rig-byte-port 5555)
+(def rig-dap-port 50000)
+
 (defn rig-command
   "Return the argv that runs a public operation on the rig.
 
@@ -53,11 +58,21 @@
           :debug (cond-> []
                    reset-on-exit? (conj "--reset-on-exit")))))
 
+(defn stdin-elf
+  "Return the client path of the ELF file an operation sends to the rig, or nil.
+
+   A flash sends the firmware it downloads and a connect session sends the ELF
+   that decodes RTT, and both travel over standard input rather than as a path."
+  [{:keys [operation elf rtt]}]
+  (case operation
+    :flash elf
+    :connect (:elf rtt)
+    nil))
+
 (defn stdin-elf?
   "Tell whether an operation sends one ELF file to the rig over standard input."
-  [{:keys [operation rtt]}]
-  (boolean (or (= :flash operation)
-               (and (= :connect operation) (some? rtt)))))
+  [operation]
+  (some? (stdin-elf operation)))
 
 (defn parse-options
   "Parse one command line against a babashka.cli spec.

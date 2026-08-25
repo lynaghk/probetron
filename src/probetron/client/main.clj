@@ -6,6 +6,7 @@
             [probetron.client.cli :as cli]
             [probetron.client.command :as command]
             [probetron.client.session :as session]
+            [probetron.client.tunnel :as tunnel]
             [probetron.operation :as op]))
 
 (declare environment elf-facts file-header report! execute! unsupported!)
@@ -30,15 +31,18 @@
 (defn execute!
   "Carry out one validated operation."
   [operation]
-  (if (contains? session/operations (:operation operation))
-    (session/execute! operation (session/runtime))
-    (unsupported! operation)))
+  (let [command (:operation operation)
+        runtime (session/runtime)]
+    (cond
+      (contains? session/operations command) (session/execute! operation runtime)
+      (contains? tunnel/operations command) (tunnel/open! operation runtime)
+      :else (unsupported! operation))))
 
 (defn unsupported!
   "Report a long session that this client cannot open yet.
 
-   The byte, RTT, and DAP sessions still have no client transport, so the client
-   names the remote command that the operation would have run."
+   The DAP session still has no client transport, so the client names the
+   remote command that the operation would have run."
   [operation]
   (binding [*out* *err*]
     (println (str "probetron: this client has no session transport, so "

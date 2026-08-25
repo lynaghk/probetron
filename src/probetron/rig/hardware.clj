@@ -4,7 +4,8 @@
    The one DUT slot never moves, so every device, executable, selector, port,
    and limit is a constant here, and so is the argv of every hardware command
    the rig runs.
-   Nothing here opens a device, a file, or a process.")
+   Nothing here opens a device, a file, or a process."
+  (:require [probetron.operation :as op]))
 
 (declare probe-command resources)
 
@@ -22,9 +23,9 @@
 (def usb-device "/dev/probetron-dut")
 
 ;; The services that a locked session exposes on Pi loopback alone.
-(def loopback "127.0.0.1")
-(def byte-port 5555)
-(def dap-port 50000)
+(def loopback op/rig-loopback)
+(def byte-port op/rig-byte-port)
+(def dap-port op/rig-dap-port)
 
 (def byte-listen-options
   "How the rig byte service listens.

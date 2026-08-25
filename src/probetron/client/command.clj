@@ -10,6 +10,10 @@
 
 (declare shell-token cache-directory key-file-name)
 
+(def client-loopback
+  "The only address that a forwarded rig service and its helpers ever bind."
+  "127.0.0.1")
+
 (def rig-executable
   "The immutable rig entry point, the only program the client runs remotely."
   "/usr/local/sbin/probetron-rig")
@@ -21,6 +25,17 @@
 (def key-resource
   "The path of the private key that the rig image serves over plain HTTP."
   "/probetron_key")
+
+(def pty-link-name
+  "The name of the pseudo-terminal link inside its own private directory."
+  "tty")
+
+(def pty-retry-seconds
+  "How long the pseudo-terminal helper keeps reaching for the forwarded endpoint.
+
+   The rig opens its own listener while the client is already forwarding, so
+   the first connection may arrive before the rig byte service exists."
+  30)
 
 (def cache-segments
   "The directories that carry the cached key inside the client cache home."
@@ -61,12 +76,54 @@
 (defn ssh-argv
   "Return the argv of one SSH invocation without a TTY.
 
-   The request is {:ssh executable :key path :host host}."
-  [{:keys [ssh key host]} remote-command]
-  (-> [ssh "-i" key "-T"]
-      (into ssh-options)
-      (conj (str rig-user "@" host))
-      (conj remote-command)))
+   The request is {:ssh executable :key path :host host}, and the extra options
+   carry whatever one long session forwards."
+  ([request remote-command] (ssh-argv request [] remote-command))
+  ([{:keys [ssh key host]} extra remote-command]
+   (-> [ssh "-i" key "-T"]
+       (into ssh-options)
+       (into extra)
+       (conj (str rig-user "@" host))
+       (conj remote-command))))
+
+(defn session-argv
+  "Return the argv of one SSH invocation that publishes a rig service on the client.
+
+   The forward listens on the client loopback alone, and a forward that fails
+   ends the session at once, so the client never prints an endpoint that
+   reaches nothing."
+  [request local-port rig-port remote-command]
+  (ssh-argv request
+            ["-L" (str client-loopback ":" local-port ":" op/rig-loopback ":" rig-port)
+             "-o" "ExitOnForwardFailure=yes"]
+            remote-command))
+
+(defn service-endpoint
+  "Return the address that a host program of the client opens."
+  [local-port]
+  (str "tcp://" client-loopback ":" local-port))
+
+(defn pty-bridge-command
+  "Return the argv that presents one forwarded endpoint as a pseudo-terminal.
+
+   socat creates the link at once but waits for a host program to open the
+   terminal before it connects, so nothing occupies the one rig byte client
+   until somebody actually reads DUT bytes."
+  [socat link local-port]
+  [socat
+   (str "PTY,link=" link ",raw,echo=0,wait-slave")
+   (str "TCP:" client-loopback ":" local-port ",retry=" pty-retry-seconds ",interval=1")])
+
+(defn pty-link
+  "Return the pseudo-terminal link inside one private directory."
+  [directory]
+  (str directory "/" pty-link-name))
+
+(defn volatile-directory
+  "Return the volatile base that carries a private link, or nil for the client default."
+  [env]
+  (let [base (get env "XDG_RUNTIME_DIR")]
+    (when-not (str/blank? base) base)))
 
 (defn shell-token
   "Quote one value so a POSIX shell reads it as exactly one unchanged token."

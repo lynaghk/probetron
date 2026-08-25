@@ -15,10 +15,12 @@
             [probetron.client.key :as rig-key]
             [probetron.client.report :as report]
             [probetron.operation :as op]
-            [probetron.version :as version]))
+            [probetron.version :as version])
+  (:import (java.net InetAddress ServerSocket)))
 
-(declare invoke! report-information! rig-information upload environment
-         default-runtime default-executables default-filesystem write-key! fail! warn!)
+(declare invoke! report-transport-failure! report-information! rig-information upload environment
+         default-runtime default-executables default-filesystem write-key!
+         reserve-port! make-link-directory! fail! warn!)
 
 (def operations
   "The client operations that finish inside one short remote command."
@@ -48,10 +50,19 @@
         argv (command/ssh-argv {:ssh (:ssh executables) :key key :host (:host operation)}
                                (command/remote-command operation))
         result (run! argv (merge {:in (upload operation)} streams))]
-    (when (= transport-failure (:exit result))
-      (warn! (str "the SSH connection to " (:host operation) " failed"
-                  ": check the address, the wired LAN, and that the rig has booted")))
+    (report-transport-failure! (:host operation) (:exit result))
     result))
+
+(defn report-transport-failure!
+  "Explain an SSH invocation that never reached the rig and return its status.
+
+   Only SSH itself answers 255, so a rig that refuses an operation keeps its
+   own status and its own diagnostic."
+  [host exit]
+  (when (= transport-failure exit)
+    (warn! (str "the SSH connection to " host " failed"
+                ": check the address, the wired LAN, and that the rig has booted")))
+  exit)
 
 (defn report-information!
   "Report the client versions, the cached key, and the report of the rig.
@@ -85,11 +96,12 @@
 (defn upload
   "Return the standard input of one remote command.
 
-   Only flash sends bytes, and every other operation closes standard input at
-   once, so the rig never waits for a client that has nothing to say."
+   Only a flash and an RTT session send bytes, and every other operation closes
+   standard input at once, so the rig never waits for a client that has
+   nothing to say."
   [operation]
-  (if (op/stdin-elf? operation)
-    (fs/file (:elf operation))
+  (if-let [path (op/stdin-elf operation)]
+    (fs/file path)
     ""))
 
 (defn runtime
@@ -105,8 +117,11 @@
        (assoc :filesystem (merge default-filesystem (:filesystem overrides))))))
 
 (def default-executables
-  "The client programs that Probetron runs, resolved through PATH."
-  {:ssh "ssh"})
+  "The client programs that Probetron runs, resolved through PATH.
+
+   Only SSH is required: a client without socat keeps every session and loses
+   the pseudo-terminal presentation alone."
+  {:ssh "ssh" :socat "socat"})
 
 (def default-filesystem
   "The real filesystem behind the key cache."
@@ -121,7 +136,27 @@
   {:executables default-executables
    :filesystem default-filesystem
    :fetch! rig-key/http-fetch!
-   :run! (fn [argv opts] @(process/process argv (merge {:throw false} opts)))})
+   :which (fn [program] (some-> (fs/which program) str))
+   :reserve-port! (fn [] (reserve-port!))
+   :make-link-directory! (fn [base] (make-link-directory! base))
+   :delete-link-directory! (fn [path] (fs/delete-tree path))
+   :run! (fn [argv opts] @(process/process argv (merge {:throw false} opts)))
+   :spawn! (fn [argv opts] (process/process argv opts))})
+
+(defn reserve-port!
+  "Return a free ephemeral port on the client loopback.
+
+   The reservation closes before SSH binds the same port, which is why a client
+   that needs an exact port passes --local-port instead."
+  []
+  (with-open [socket (ServerSocket. 0 1 (InetAddress/getByName command/client-loopback))]
+    (.getLocalPort socket)))
+
+(defn make-link-directory!
+  "Create the private volatile directory that carries one pseudo-terminal link."
+  [base]
+  (str (fs/create-temp-dir (cond-> {:prefix "probetron-pty" :posix-file-permissions "rwx------"}
+                             base (assoc :path base)))))
 
 (defn write-key!
   "Write one private key through a temporary neighbour that only the client may read."
