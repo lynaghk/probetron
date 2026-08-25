@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Public Probetron entry point.
+# It runs from a development checkout with ../src and from an installation with ../lib.
+set -euo pipefail
+
+script="${BASH_SOURCE[0]}"
+while [ -L "$script" ]; do
+  target="$(readlink "$script")"
+  case "$target" in
+    /*) script="$target" ;;
+    *) script="$(dirname "$script")/$target" ;;
+  esac
+done
+root="$(cd "$(dirname "$script")/.." && pwd -P)"
+
+classpath=""
+# A candidate counts only when it carries the code, so an empty stock
+# directory such as /usr/local/src never shadows the installed /usr/local/lib.
+for candidate in "$root/src" "$root/lib"; do
+  if [ -f "$candidate/probetron/client/main.clj" ]; then
+    classpath="$candidate"
+    break
+  fi
+done
+
+if [ -z "$classpath" ]; then
+  echo "probetron: missing Probetron code: expected $root/src in a checkout or $root/lib in an installation" >&2
+  echo "probetron: reinstall Probetron or run bin/probetron from the project directory" >&2
+  exit 69
+fi
+
+exec bb --classpath "$classpath" --main probetron.client.main "$@"

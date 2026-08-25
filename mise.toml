@@ -1,0 +1,3 @@
+[tools]
+babashka = "1.13.219"
+clj-kondo = "2026.08.04"
