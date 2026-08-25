@@ -8,30 +8,33 @@ Everything it owns lives under `probetron/`.
 
 ## Layout
 
-| Path                                | Contents                                                          |
-| ----------------------------------- | ----------------------------------------------------------------- |
-| `bin/probetron`                     | public client entry point                                         |
-| `bin/probetron-rig`                 | rig entry point that the client reaches over SSH                  |
-| `src/probetron/operation.clj`       | pure operation model, validators, and rig command construction    |
-| `src/probetron/version.clj`         | the release version that every role reports                       |
-| `src/probetron/client/cli.clj`      | pure parser of the public command line                            |
-| `src/probetron/client/command.clj`  | pure remote command, SSH argv, and key cache paths                |
-| `src/probetron/client/report.clj`   | pure client information record and its two output forms           |
-| `src/probetron/rig/config.clj`      | pure parser of the rig-only SSH protocol                          |
-| `src/probetron/rig/lifecycle.clj`   | pure ownership model and appliance command lines                  |
-| `src/probetron/rig/hardware.clj`    | pure description of the fixed target slot and its command lines   |
-| `src/probetron/rig/elf.clj`         | pure validator of one uploaded firmware image                     |
-| `src/probetron/rig/information.clj` | pure information record and its two output forms                  |
-| `src/probetron/client/main.clj`     | imperative shell of the client                                    |
-| `src/probetron/client/key.clj`      | imperative shell that refreshes the cached rig key                |
-| `src/probetron/client/session.clj`  | imperative shell of the short client operations                   |
-| `src/probetron/client/tunnel.clj`   | imperative shell of the long client sessions                      |
-| `src/probetron/rig/main.clj`        | imperative shell of the rig                                       |
-| `src/probetron/rig/runner.clj`      | imperative shell that owns the target lock and the process groups |
-| `src/probetron/rig/target.clj`      | imperative shell of `info`, `flash`, `erase`, and `reset`         |
-| `src/probetron/rig/session.clj`     | imperative shell of the locked `connect` and `debug` sessions     |
-| `test/probetron/`                   | `clojure.test` namespaces that the runner discovers               |
-| `VERSION`                           | the release version, which `probetron.version` repeats            |
+| Path                                     | Contents                                                          |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `bin/probetron`                          | public client entry point                                         |
+| `bin/probetron-rig`                      | rig entry point that the client reaches over SSH                  |
+| `src/probetron/operation.clj`            | pure operation model, validators, and rig command construction    |
+| `src/probetron/version.clj`              | the release version that every role reports                       |
+| `src/probetron/client/cli.clj`           | pure parser of the public command line                            |
+| `src/probetron/client/command.clj`       | pure remote command, SSH argv, and key cache paths                |
+| `src/probetron/client/report.clj`        | pure client information record and its two output forms           |
+| `src/probetron/rig/config.clj`           | pure parser of the rig-only SSH protocol                          |
+| `src/probetron/rig/lifecycle.clj`        | pure ownership model and appliance command lines                  |
+| `src/probetron/rig/hardware.clj`         | pure description of the fixed target slot and its command lines   |
+| `src/probetron/rig/elf.clj`              | pure validator of one uploaded firmware image                     |
+| `src/probetron/rig/information.clj`      | pure information record and its two output forms                  |
+| `src/probetron/client/main.clj`          | imperative shell of the client                                    |
+| `src/probetron/client/key.clj`           | imperative shell that refreshes the cached rig key                |
+| `src/probetron/client/session.clj`       | imperative shell of the short client operations                   |
+| `src/probetron/client/tunnel.clj`        | imperative shell of the long client sessions                      |
+| `src/probetron/rig/main.clj`             | imperative shell of the rig                                       |
+| `src/probetron/rig/runner.clj`           | imperative shell that owns the target lock and the process groups |
+| `src/probetron/rig/target.clj`           | imperative shell of `info`, `flash`, `erase`, and `reset`         |
+| `src/probetron/rig/session.clj`          | imperative shell of the locked `connect` and `debug` sessions     |
+| `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive   |
+| `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                 |
+| `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                   |
+| `test/probetron/`                        | `clojure.test` namespaces that the runner discovers               |
+| `VERSION`                                | the release version, which `probetron.version` repeats            |
 
 Both entry points resolve their own symlinks, then load `../src` in a development checkout or `../lib` in an installation.
 
@@ -315,6 +318,43 @@ tcp://127.0.0.1:45678
 The outer SSH process then lives until the client ends it, so no DAP disconnect ever releases the target lock.
 Cleanup reaps the whole DAP process group and leaves the target alone, unless `--reset-on-exit` asked for one best-effort reset, which runs after that group has stopped.
 
+## Release archive
+
+`bb package` and `mise run package` write one release archive and its checksum under `build/`.
+
+```sh
+mise run package
+```
+
+```text
+probetron: 0.1.0
+archive: build/probetron-0.1.0.tar.gz
+checksum: build/probetron-0.1.0.tar.gz.sha256
+sha256: <64 hexadecimal digits>
+```
+
+The `VERSION` file names the release, and `probetron.version` must repeat it, so one edit can never leave a release half renamed.
+`--tag` states which release the archive belongs to and passes only when it names that version, with or without its leading `v`.
+
+```sh
+bb package --tag v0.1.0
+```
+
+The archive is deterministic: every member carries mode 0644 or 0755, owner 0, and modification time 0, members arrive in one sorted order, and gzip records no name and no timestamp.
+Two runs over the same sources therefore write identical bytes, so anybody can rebuild a tag and compare its digest with the published `probetron-<version>.tar.gz.sha256`, whose one line is what `sha256sum -c` reads.
+
+| Archive path        | Contents                                                |
+| ------------------- | ------------------------------------------------------- |
+| `bin/probetron`     | the public client entry point, mode 0755                |
+| `bin/probetron-rig` | the rig entry point, mode 0755                          |
+| `lib/probetron/`    | the relocatable source tree that both entry points load |
+| `VERSION`           | the release version                                     |
+| `README.md`         | this documentation                                      |
+
+Both entry points resolve their own symlinks and load `../lib`, so the tree works wherever it is unpacked, and the archive carries no test tree and no build task.
+`bin/` sits at the archive root, which is where a mise GitHub tool looks for the programs it puts on `PATH`: such a tool downloads `probetron-<version>.tar.gz`, unpacks it into one installation directory, and needs neither a strip nor a rename.
+The archive carries no Babashka binary, so a client installs Babashka once through mise or its own package manager and one archive then serves macOS and Linux alike.
+
 ## Current state
 
 The operation model, both command lines, and both entry points parse, validate, and refuse malformed input.
@@ -322,3 +362,4 @@ The rig owns the target lock, the active record, and the process groups of one o
 `info`, `flash`, `erase`, `reset`, `connect`, and `debug` drive the hardware.
 The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said.
 It also opens the `connect` and `debug` sessions, publishes the rig byte service or the rig DAP server on a client loopback port, and presents the byte service as a pseudo-terminal when it can.
+`bb package` builds the release archive that a future mise tool installs.

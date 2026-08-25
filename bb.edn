@@ -1,9 +1,12 @@
 {:paths ["src" "test"]
  :tasks
- {test  {:doc "Run the Probetron test suite"
-         :requires ([probetron.test-runner :as test-runner])
-         :task (test-runner/run-tests!)}
-  lint  {:doc "Lint the Probetron sources with clj-kondo"
-         :task (shell "clj-kondo --lint src test")}
-  check {:doc "Run lint and tests"
-         :depends [lint test]}}}
+ {test    {:doc "Run the Probetron test suite"
+           :requires ([probetron.test-runner :as test-runner])
+           :task (test-runner/run-tests!)}
+  lint    {:doc "Lint the Probetron sources with clj-kondo"
+           :task (shell "clj-kondo --lint src test")}
+  check   {:doc "Run lint and tests"
+           :depends [lint test]}
+  package {:doc "Build the release archive under build/"
+           :requires ([probetron.provisioning.package :as package])
+           :task (System/exit (package/main! *command-line-args*))}}}
