@@ -20,7 +20,8 @@
 
 (declare usage build! validate! checked-pins! read-pins! check-host! check-glibc! checkout!
          report-topology! require-privilege! stage! generate-image! publish! report
-         layer-files pipeline-layers canonical-env overrides ig-program
+         layer-files pipeline-layers canonical-env overrides ig-program dependency-state
+         install-hint install-command
          capture! stream! download! extract! sha-256-file os-release environment-file
          fail! fatal move!)
 
@@ -370,14 +371,19 @@
         image (fs/path work (str "image-" name) (str name ".img"))]
     (fs/create-dirs work)
     (fs/delete-if-exists image)
-    (stream! {:extra-env {"SOURCE_DATE_EPOCH" (str (get-in pins [:suite :snapshot-epoch]))}}
-             (into [(str (fs/path checkout "rpi-image-gen")) "build"
-                    "-S" (str (fs/path project-root source-root))
-                    "-c" config-file
-                    "-B" (str work)
-                    "--"]
-                   (into (overrides pins staged) extra))
-             "the image build failed")
+    (try
+      (stream! {:extra-env {"SOURCE_DATE_EPOCH" (str (get-in pins [:suite :snapshot-epoch]))}}
+               (into [(str (fs/path checkout "rpi-image-gen")) "build"
+                      "-S" (str (fs/path project-root source-root))
+                      "-c" config-file
+                      "-B" (str work)
+                      "--"]
+                     (into (overrides pins staged) extra))
+               "the image build failed")
+      (catch clojure.lang.ExceptionInfo exception
+        (fail! (cond-> (ex-message exception)
+                 (= :missing (dependency-state checkout))
+                 (str \newline (install-hint checkout))))))
     (when-not (fs/regular-file? image)
       (fail! (str "the image build wrote no " image ": read the build output above")))
     image))
@@ -431,6 +437,33 @@
   "Return the rpi-image-gen engine helper of one checkout."
   [checkout]
   (str (fs/path checkout "bin" "ig")))
+
+(defn dependency-state
+  "Return whether this host carries every build dependency of one checkout.
+
+   rpi-image-gen owns the list and the test, so asking it is the only answer
+   that cannot drift from the one the build itself applies."
+  [checkout]
+  (let [{:keys [exit]} @(process/process
+                         ["bash" "-c" ". \"$1/lib/dependencies.sh\"; dependencies_check --category all \"$1/depends\""
+                          "bash" (str checkout)]
+                         {:out :string :err :string})]
+    (if (zero? exit) :installed :missing)))
+
+(defn install-hint
+  "Return the repair line of a build that stopped on a missing dependency.
+
+   rpi-image-gen prints the bare name of its installer, which sits in the
+   pinned checkout and not in the working directory, so that name is no
+   command that anybody can run."
+  [checkout]
+  (str "install the rpi-image-gen build dependencies: run "
+       (install-command checkout (fs/cwd)) " once, then build again"))
+
+(defn install-command
+  "Return the dependency installer of one checkout, named from one directory."
+  [checkout directory]
+  (str (fs/relativize (fs/absolutize directory) (fs/absolutize (fs/path checkout "install_deps.sh")))))
 
 (defn capture!
   "Run one command, return its standard output, and fail with its diagnostics."
@@ -491,5 +524,6 @@
 (defn fatal
   "Report one diagnostic on standard error and return an exit status."
   [message status]
-  (binding [*out* *err*] (println (str "image: " message)))
+  (binding [*out* *err*]
+    (doseq [line (str/split-lines message)] (println (str "image: " line))))
   status)
