@@ -1,0 +1,92 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-runtime
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Desc: The Probetron appliance itself. Installs the release
+#  archive under /usr/local, the pinned Babashka and probe-rs binaries, and
+#  every other program that the rig entry point runs.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Provides: probetron-appliance
+# X-Env-Layer-Requires: debian-trixie-arm64-minbase-snapshot,
+#  rpi-debian-trixie,
+#  rpi-essential-base,
+#  rpi-misc-utils,
+#  rpi-misc-skel,
+#  systemd-net-min
+#
+# X-Env-VarPrefix: probetron
+#
+# X-Env-Var-release:
+# X-Env-Var-release-Desc: Build host path of the Probetron release archive that
+#  bb package wrote. The image build driver stages it and sets this.
+# X-Env-Var-release-Required: n
+# X-Env-Var-release-Valid: string-or-empty
+# X-Env-Var-release-Set: y
+#
+# X-Env-Var-babashka:
+# X-Env-Var-babashka-Desc: Build host path of the verified aarch64 Babashka
+#  binary that becomes /usr/local/bin/bb.
+# X-Env-Var-babashka-Required: n
+# X-Env-Var-babashka-Valid: string-or-empty
+# X-Env-Var-babashka-Set: y
+#
+# X-Env-Var-probe_rs:
+# X-Env-Var-probe_rs-Desc: Build host path of the verified aarch64 probe-rs
+#  binary that becomes /usr/local/bin/probe-rs.
+# X-Env-Var-probe_rs-Required: n
+# X-Env-Var-probe_rs-Valid: string-or-empty
+# X-Env-Var-probe_rs-Set: y
+#
+# X-Env-Var-rig_key:
+# X-Env-Var-rig_key-Desc: Build host path of the private half of the image SSH
+#  keypair that the access layer serves over plain HTTP.
+# X-Env-Var-rig_key-Required: n
+# X-Env-Var-rig_key-Valid: string-or-empty
+# X-Env-Var-rig_key-Set: y
+#
+# X-Env-Var-usb_port_label:
+# X-Env-Var-usb_port_label-Desc: The board-relative Pi 4B receptacle that the
+#  one DUT plugs into, as hardware qualification recorded it in pins.edn.
+# X-Env-Var-usb_port_label-Required: n
+# X-Env-Var-usb_port_label-Valid: string-or-empty
+# X-Env-Var-usb_port_label-Set: y
+#
+# X-Env-Var-usb_kernels:
+# X-Env-Var-usb_kernels-Desc: The exact KERNELS ancestry of the CDC interface in
+#  that receptacle, as hardware qualification recorded it in pins.edn. The DUT
+#  udev rule matches this topology and never a VID, PID, or serial descriptor.
+# X-Env-Var-usb_kernels-Required: n
+# X-Env-Var-usb_kernels-Valid: string-or-empty
+# X-Env-Var-usb_kernels-Set: y
+# METAEND
+---
+mmdebstrap:
+  packages:
+    # Every program that the rig names by absolute path, and the device
+    # manager whose rules the hardware layer owns.
+    - gpiod
+    - procps
+    - socat
+    - sudo
+    - udev
+  customize-hooks:
+    - |-
+      set -eu
+      test -n "${IGconf_probetron_release:-}" ||
+        { echo "probetron-runtime: no release archive: run 'bb image', which runs 'bb package' and sets IGconf_probetron_release" >&2 ; exit 1 ; }
+      test -f "$IGconf_probetron_release" ||
+        { echo "probetron-runtime: missing release archive $IGconf_probetron_release: run 'bb package'" >&2 ; exit 1 ; }
+      install -d -m 0755 "$1/usr/local" "$1/usr/local/sbin"
+      tar -xzf "$IGconf_probetron_release" -C "$1/usr/local"
+      test -x "$1/usr/local/bin/probetron-rig" ||
+        { echo "probetron-runtime: the release archive carries no bin/probetron-rig" >&2 ; exit 1 ; }
+      ln -sf /usr/local/bin/probetron-rig "$1/usr/local/sbin/probetron-rig"
+    - |-
+      set -eu
+      test -n "${IGconf_probetron_babashka:-}" && test -f "$IGconf_probetron_babashka" ||
+        { echo "probetron-runtime: no verified Babashka binary: run 'bb image', which fetches and checks the pinned archive" >&2 ; exit 1 ; }
+      install -m 0755 -o root -g root "$IGconf_probetron_babashka" "$1/usr/local/bin/bb"
+    - |-
+      set -eu
+      test -n "${IGconf_probetron_probe_rs:-}" && test -f "$IGconf_probetron_probe_rs" ||
+        { echo "probetron-runtime: no verified probe-rs binary: run 'bb image', which fetches and checks the pinned archive" >&2 ; exit 1 ; }
+      install -m 0755 -o root -g root "$IGconf_probetron_probe_rs" "$1/usr/local/bin/probe-rs"

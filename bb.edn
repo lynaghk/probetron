@@ -9,4 +9,7 @@
            :depends [lint test]}
   package {:doc "Build the release archive under build/"
            :requires ([probetron.provisioning.package :as package])
-           :task (System/exit (package/main! *command-line-args*))}}}
+           :task (System/exit (package/main! *command-line-args*))}
+  image   {:doc "Build the pinned Raspberry Pi 4 rig image under build/"
+           :requires ([probetron.provisioning.image :as image])
+           :task (System/exit (image/main! *command-line-args*))}}}

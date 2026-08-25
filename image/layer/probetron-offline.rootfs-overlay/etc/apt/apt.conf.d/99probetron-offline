@@ -1,0 +1,7 @@
+// The rig installs nothing and updates nothing.
+// It builds no artefact, so it needs no package index at all.
+APT::Periodic::Enable "0";
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Download-Upgradeable-Packages "0";
+APT::Periodic::Unattended-Upgrade "0";
+Acquire::Retries "0";

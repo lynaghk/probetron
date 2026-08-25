@@ -1,0 +1,42 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-immutable
+# X-Env-Layer-Desc: The rig stores nothing. Mounts root and boot read-only,
+#  puts every writable path on an explicitly sized tmpfs, and keeps the journal
+#  in memory, so power loss needs no filesystem repair and every boot presents
+#  the same appliance.
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: probetron-runtime,rpi-boot-firmware
+# X-Env-Layer-RequiresProvider: probetron-appliance
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    # The kernel mounts root read-only, and nothing may remount it. Masking the
+    # remount is what makes that stick, because /etc/fstab of the image layout
+    # asks for rw and the image layout writes that file after this layer runs.
+    - |-
+      set -eu
+      cmdline="$1/boot/firmware/cmdline.txt"
+      line=$(tr -d '\n' < "$cmdline")
+      case " $line " in
+         *" ro "*) ;;
+         *) line="$line ro" ;;
+      esac
+      printf '%s\n' "$line" > "$cmdline"
+      systemctl --root="$1" mask systemd-remount-fs.service
+    # One rig identity, fixed now, because a read-only /etc cannot make one at
+    # first boot and 'probetron info' reports it as the identity of the rig.
+    - |-
+      set -eu
+      head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$1/etc/machine-id"
+      printf '\n' >> "$1/etc/machine-id"
+      chmod 0444 "$1/etc/machine-id"
+      install -d -m 0755 "$1/var/lib/dbus"
+      ln -sf /etc/machine-id "$1/var/lib/dbus/machine-id"
+    # Nothing writes to persistent storage, so the services that would try are
+    # not merely harmless failures: they are removed.
+    - systemctl --root="$1" mask systemd-random-seed.service systemd-update-done.service
+    - >-
+      systemctl --root="$1" enable
+      tmp.mount var-tmp.mount var-log.mount run-probetron.mount

@@ -192,8 +192,9 @@
                               " to header pins 8 and 10")}
    :usb-device {:in :hardware
                 :name "DUT USB device"
-                :repair (str "plug the DUT into the fixed Pi USB port that the image udev rule"
-                             " names, and check that the firmware exposes a USB CDC device")}})
+                :repair (str "plug the DUT into the Pi, and check that the firmware exposes a"
+                             " USB CDC device, because a board in BOOTSEL is mass storage"
+                             " and matches no rule")}})
 
 (defn resource-path
   "Return the absolute path that a runtime gives one rig resource."

@@ -1,0 +1,19 @@
+# The fixed target slot of the Probetron appliance.
+#
+# Every device below is moved into the probetron-hardware group for one reason:
+# to take it out of the default groups, such as dialout, gpio, and spi, that an
+# ordinary account can belong to. Nobody is a member of probetron-hardware, and
+# nothing in this image ever adds a member, so mode 0660 leaves these devices
+# open to root alone. The probetron account therefore cannot open any of them
+# directly and reaches the target only through the sudo rule for the rig entry
+# point, which is what makes the target lock the one way to own the hardware.
+
+# SPI0 carries SWD. spidev_swd0 is the only SPI device that probe-rs discovery
+# accepts, so a probe request can never reach another SPI device of the Pi.
+SUBSYSTEM=="spidev", KERNEL=="spidev0.0", GROUP="probetron-hardware", MODE="0660", SYMLINK+="spidev_swd0"
+
+# GPIO26 on this chip is the RUN line of the target.
+SUBSYSTEM=="gpio", KERNEL=="gpiochip0", GROUP="probetron-hardware", MODE="0660"
+
+# UART0 on GPIO14 and GPIO15 is the optional DUT serial channel.
+SUBSYSTEM=="tty", KERNEL=="ttyAMA0", GROUP="probetron-hardware", MODE="0660"

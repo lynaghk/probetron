@@ -1,0 +1,15 @@
+[Unit]
+Description=Probetron volatile /var/log
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target systemd-tmpfiles-setup.service
+After=swap.target
+
+[Mount]
+What=tmpfs
+Where=/var/log
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=32M,nr_inodes=8k
+
+[Install]
+WantedBy=local-fs.target

@@ -1,0 +1,39 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-offline
+# X-Env-Layer-Desc: The rig asks the internet for nothing. Removes every
+#  package, time, and discovery service that would open a connection, and turns
+#  off the radios, leaving wired DHCP and SSH alone.
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: probetron-runtime,rpi-boot-firmware
+# X-Env-Layer-RequiresProvider: probetron-appliance
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    # No radio. The wired link is the only network the appliance has.
+    - |-
+      set -eu
+      cat >> "$1/boot/firmware/config.txt" <<'EOCONFIG'
+
+      # Probetron: no radio.
+      [all]
+      dtoverlay=disable-wifi
+      EOCONFIG
+    # Nothing may fetch a package list, an upgrade, or the time.
+    - >-
+      systemctl --root="$1" mask
+      apt-daily.service apt-daily.timer
+      apt-daily-upgrade.service apt-daily-upgrade.timer
+      systemd-timesyncd.service chrony.service
+    # Nothing may announce or discover the rig, and nothing may drive a radio.
+    - >-
+      systemctl --root="$1" mask
+      avahi-daemon.service avahi-daemon.socket
+      bluetooth.service hciuart.service
+      wpa_supplicant.service iwd.service
+    # Nothing may run periodic maintenance against a read-only filesystem.
+    - >-
+      systemctl --root="$1" mask
+      e2scrub_all.timer e2scrub_reap.service fstrim.timer
+      man-db.timer dpkg-db-backup.timer logrotate.timer

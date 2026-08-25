@@ -1,0 +1,75 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-hardware
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Desc: The one fixed DUT slot. Enables SPI0 for direct Linux SWD,
+#  puts UART0 on GPIO14 and GPIO15 with no serial console, leaves GPIO26 free
+#  for the RUN line, and reserves every target device from the probetron
+#  account by giving it to the empty probetron-hardware group.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: probetron-runtime,rpi-boot-firmware
+# X-Env-Layer-RequiresProvider: probetron-appliance
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    # The group that owns every target device. It exists to keep those devices
+    # out of the default groups, such as dialout, gpio, and spi, that an
+    # ordinary account can belong to. It is deliberately left empty: nothing
+    # here or in any other layer adds a member, so no group membership can hand
+    # the probetron account the hardware, and the sudo rule for the rig entry
+    # point stays the only path to it.
+    - chroot "$1" groupadd --force --system probetron-hardware
+    # SPI0 for SWD, PL011 UART0 on GPIO14 and GPIO15 for the optional serial
+    # channel, and no camera or display probing. Disabling Bluetooth is what
+    # moves the PL011 onto those two pins in the first place.
+    - |-
+      set -eu
+      cat >> "$1/boot/firmware/config.txt" <<'EOCONFIG'
+
+      # Probetron: the one fixed DUT slot.
+      [all]
+      # SPI0 on GPIO11, GPIO9, and GPIO10 carries SWD to the target.
+      dtparam=spi=on
+      # UART0 on GPIO14 and GPIO15 carries the optional DUT serial channel.
+      enable_uart=1
+      dtoverlay=disable-bt
+      # The appliance drives no camera and no display.
+      camera_auto_detect=0
+      display_auto_detect=0
+      EOCONFIG
+    # The DUT owns the serial line, so no console and no login may speak on it.
+    - |-
+      set -eu
+      cmdline="$1/boot/firmware/cmdline.txt"
+      sed -i -e 's/console=serial0,[0-9]* //g' -e 's/console=ttyAMA0,[0-9]* //g' "$cmdline"
+      systemctl --root="$1" mask serial-getty@ttyAMA0.service serial-getty@serial0.service
+    # The DUT USB rule matches the CDC tty class, and never a VID, PID, or
+    # serial descriptor, because those belong to the firmware rather than to
+    # the rig: a DUT that is reflashed with a different USB identity would stop
+    # matching, which is the worst possible moment to lose the device.
+    #
+    # A rig owns one DUT and carries no console, so by default the one CDC
+    # serial device it can see is that DUT. A board in BOOTSEL enumerates as
+    # mass storage and a USB-serial adapter binds ftdi_sio or cp210x, so
+    # neither of those matches this rule.
+    #
+    # A bench that really does present a second CDC device records a receptacle
+    # in image/pins.edn, and the rule then narrows to that physical socket, so
+    # a board anywhere else is not the DUT. Nothing guesses that receptacle,
+    # because a guessed one would quietly make some other socket the DUT.
+    - |-
+      set -eu
+      if test -n "${IGconf_probetron_usb_kernels:-}" ; then
+         slot="# The one DUT slot: the CDC tty of ${IGconf_probetron_usb_port_label:-an unlabelled receptacle}."
+         match="KERNELS==\"${IGconf_probetron_usb_kernels}\", "
+      else
+         slot="# The one DUT slot: the only CDC tty that this rig can see."
+         match=""
+         echo "probetron-hardware: no receptacle recorded in image/pins.edn, so any CDC serial device is the DUT." >&2
+         echo "probetron-hardware: to narrow the rule to one physical socket, boot this image, plug the DUT in, read 'udevadm info --attribute-walk --name=/dev/ttyACM0' on the rig, record :usb-port-label and :usb-kernels, and build again." >&2
+      fi
+      printf '%s\n' \
+        "$slot" \
+        "SUBSYSTEM==\"tty\", SUBSYSTEMS==\"usb\", DRIVERS==\"cdc_acm\", ${match}SYMLINK+=\"probetron-dut\", GROUP=\"probetron-hardware\", MODE=\"0660\"" \
+        > "$1/etc/udev/rules.d/61-probetron-dut.rules"
+      chmod 0644 "$1/etc/udev/rules.d/61-probetron-dut.rules"

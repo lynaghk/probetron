@@ -1,0 +1,3 @@
+# probetron owns the rig, so it becomes root without a password: the client runs
+# the rig command through sudo, and an operator on the console repairs by hand.
+probetron ALL=(ALL) NOPASSWD: ALL

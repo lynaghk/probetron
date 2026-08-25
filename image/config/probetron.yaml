@@ -1,0 +1,48 @@
+# The whole Probetron appliance, layer by layer.
+# scripts/image.clj supplies every pinned input, every staged file, and the
+# measured DUT topology as variable overrides, so this file states policy alone.
+
+device:
+  layer: rpi4
+  class: pi4
+  vendor: probetron
+  hostname: probetron
+  storage_type: sd
+  # probetron owns no hardware group, so it reaches the target only through sudo and
+  # the immutable rig entry point.
+  # user1sudo asks for sudo itself and nothing else: 'none' would purge the
+  # package, and probetron-access removes the general permission that this
+  # setting grants.
+  user1: probetron
+  user1groups: users
+  user1sudo: passwd
+
+image:
+  layer: image-rpios
+  name: probetron-rpi4
+  rootfs_type: ext4
+  boot_part_size: 100%
+  root_part_size: 130%
+
+ssh:
+  pubkey_only: y
+
+# The boot filesystem is read-only, so an automatic EEPROM update could only
+# fail on every boot. Reflashing the EEPROM is a deliberate bench operation.
+rpisec:
+  eepromupd: n
+
+# Probetron compresses and publishes its own image, and an SBOM provider that
+# fetches itself from an unpinned URL has no place in a pinned build.
+deploy:
+  compression: none
+
+sbom:
+  enable: n
+
+layer:
+  runtime: probetron-runtime
+  access: probetron-access
+  hardware: probetron-hardware
+  immutable: probetron-immutable
+  offline: probetron-offline

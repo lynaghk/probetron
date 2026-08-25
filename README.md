@@ -8,33 +8,36 @@ Everything it owns lives under `probetron/`.
 
 ## Layout
 
-| Path                                     | Contents                                                          |
-| ---------------------------------------- | ----------------------------------------------------------------- |
-| `bin/probetron`                          | public client entry point                                         |
-| `bin/probetron-rig`                      | rig entry point that the client reaches over SSH                  |
-| `src/probetron/operation.clj`            | pure operation model, validators, and rig command construction    |
-| `src/probetron/version.clj`              | the release version that every role reports                       |
-| `src/probetron/client/cli.clj`           | pure parser of the public command line                            |
-| `src/probetron/client/command.clj`       | pure remote command, SSH argv, and key cache paths                |
-| `src/probetron/client/report.clj`        | pure client information record and its two output forms           |
-| `src/probetron/rig/config.clj`           | pure parser of the rig-only SSH protocol                          |
-| `src/probetron/rig/lifecycle.clj`        | pure ownership model and appliance command lines                  |
-| `src/probetron/rig/hardware.clj`         | pure description of the fixed target slot and its command lines   |
-| `src/probetron/rig/elf.clj`              | pure validator of one uploaded firmware image                     |
-| `src/probetron/rig/information.clj`      | pure information record and its two output forms                  |
-| `src/probetron/client/main.clj`          | imperative shell of the client                                    |
-| `src/probetron/client/key.clj`           | imperative shell that refreshes the cached rig key                |
-| `src/probetron/client/session.clj`       | imperative shell of the short client operations                   |
-| `src/probetron/client/tunnel.clj`        | imperative shell of the long client sessions                      |
-| `src/probetron/rig/main.clj`             | imperative shell of the rig                                       |
-| `src/probetron/rig/runner.clj`           | imperative shell that owns the target lock and the process groups |
-| `src/probetron/rig/target.clj`           | imperative shell of `info`, `flash`, `erase`, and `reset`         |
-| `src/probetron/rig/session.clj`          | imperative shell of the locked `connect` and `debug` sessions     |
-| `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive   |
-| `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                 |
-| `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                   |
-| `test/probetron/`                        | `clojure.test` namespaces that the runner discovers               |
-| `VERSION`                                | the release version, which `probetron.version` repeats            |
+| Path                                     | Contents                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| `bin/probetron`                          | public client entry point                                          |
+| `bin/probetron-rig`                      | rig entry point that the client reaches over SSH                   |
+| `src/probetron/operation.clj`            | pure operation model, validators, and rig command construction     |
+| `src/probetron/version.clj`              | the release version that every role reports                        |
+| `src/probetron/client/cli.clj`           | pure parser of the public command line                             |
+| `src/probetron/client/command.clj`       | pure remote command, SSH argv, and key cache paths                 |
+| `src/probetron/client/report.clj`        | pure client information record and its two output forms            |
+| `src/probetron/rig/config.clj`           | pure parser of the rig-only SSH protocol                           |
+| `src/probetron/rig/lifecycle.clj`        | pure ownership model and appliance command lines                   |
+| `src/probetron/rig/hardware.clj`         | pure description of the fixed target slot and its command lines    |
+| `src/probetron/rig/elf.clj`              | pure validator of one uploaded firmware image                      |
+| `src/probetron/rig/information.clj`      | pure information record and its two output forms                   |
+| `src/probetron/client/main.clj`          | imperative shell of the client                                     |
+| `src/probetron/client/key.clj`           | imperative shell that refreshes the cached rig key                 |
+| `src/probetron/client/session.clj`       | imperative shell of the short client operations                    |
+| `src/probetron/client/tunnel.clj`        | imperative shell of the long client sessions                       |
+| `src/probetron/rig/main.clj`             | imperative shell of the rig                                        |
+| `src/probetron/rig/runner.clj`           | imperative shell that owns the target lock and the process groups  |
+| `src/probetron/rig/target.clj`           | imperative shell of `info`, `flash`, `erase`, and `reset`          |
+| `src/probetron/rig/session.clj`          | imperative shell of the locked `connect` and `debug` sessions      |
+| `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive    |
+| `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                  |
+| `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                    |
+| `image/pins.edn`                         | every pinned revision, archive, and digest of the rig image        |
+| `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance               |
+| `image/layer/`                           | the five named appliance layers and their `.rootfs-overlay/` trees |
+| `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                |
+| `VERSION`                                | the release version, which `probetron.version` repeats             |
 
 Both entry points resolve their own symlinks, then load `../src` in a development checkout or `../lib` in an installation.
 
@@ -52,6 +55,8 @@ Drop the `mise exec --` prefix once the pinned tools are on your path.
 `bb tasks` is the whole task list, so no command lives in two places.
 
 `bb test` discovers every `test/**/*_test.clj` namespace, so a new test file needs no registration.
+It never builds an image, because that build wants a Debian 13 arm64 host, elevated privilege, and several gigabytes.
+`bb image --validate-only` is the cheap check that any checkout can run.
 
 ## Public commands
 
@@ -318,6 +323,135 @@ tcp://127.0.0.1:45678
 The outer SSH process then lives until the client ends it, so no DAP disconnect ever releases the target lock.
 Cleanup reaps the whole DAP process group and leaves the target alone, unless `--reset-on-exit` asked for one best-effort reset, which runs after that group has stopped.
 
+## Rig image
+
+`bb image` and `mise run image` build the whole appliance on a Debian 13 arm64 host and write one compressed image beside its checksum.
+
+```sh
+bb image
+```
+
+```text
+probetron: 0.1.0
+image: build/probetron-rpi4.img.xz
+checksum: build/probetron-rpi4.img.xz.sha256
+sha256: <64 hexadecimal digits>
+```
+
+Both outputs arrive through a temporary neighbour and one rename each, so an interrupted build replaces neither a valid image nor a valid checksum.
+
+`--validate-only` stops as soon as rpi-image-gen has accepted the configuration and resolved every layer, which is the whole check that a checkout without build dependencies, elevated privilege, or a spare hour can run.
+
+```sh
+bb image --validate-only
+```
+
+```text
+Valid Probetron image configuration.
+```
+
+Any `key=value` argument reaches rpi-image-gen unchanged, so renaming one rig needs no edit to a tracked file.
+
+```sh
+bb image IGconf_device_hostname=probetron-02
+```
+
+### Order of operations
+
+The build spends nothing before it knows it can finish.
+
+1. The platform gate reads `/etc/os-release` and the machine type, because rpi-image-gen supports native Debian arm64 alone and the pinned probe-rs is an aarch64 GNU binary.
+2. The GLIBC check confirms that the pinned base carries at least the GLIBC that pinned probe-rs needs.
+3. The pinned rpi-image-gen checkout appears under ignored `.cache/`, and a checkout already at the pinned revision opens no connection at all.
+4. rpi-image-gen lints all five layers, parses the configuration, and resolves the whole layer graph, then the build prints `Valid Probetron image configuration.`
+5. `--validate-only` exits here, before any key, any staged file, any privilege check, and any image construction.
+6. The DUT topology gate refuses a build whose one receptacle nobody has measured.
+7. The privilege gate refuses a host that can give the build neither root nor the podman user namespace that mmdebstrap needs.
+8. Staging runs `bb package`, fetches each pinned archive, checks it against its pinned digest before use, unpacks the one member it wants, and generates one SSH keypair.
+9. rpi-image-gen builds the image, and `xz` and one SHA-256 publish it.
+
+### Pinned inputs
+
+`image/pins.edn` is the only file in the project that names a revision, an archive, or a digest.
+
+| Pin           | Value                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| rpi-image-gen | `v2.8.0`, revision `262d4df5a9f9d4133370465399a7958a7c22cdc7`                                 |
+| base          | Debian 13 Trixie arm64, `debian-trixie-arm64-minbase-snapshot` at snapshot `20260801T000000Z` |
+| Babashka      | 1.13.219, `linux-aarch64-static`, digest pinned, installed as `/usr/local/bin/bb`             |
+| probe-rs      | 0.32.0, `aarch64-unknown-linux-gnu`, digest pinned, installed as `/usr/local/bin/probe-rs`    |
+| device        | Raspberry Pi 4, layer `rpi4`, layout `image-rpios`, wired DHCP, OpenSSH                       |
+
+The checkout is an ordinary clone under `.cache/` and never a submodule of the repository, so the surrounding project keeps its own history and its own ignore file.
+Every other artefact arrives on the build host, and the Pi therefore asks for nothing at first boot or later.
+The snapshot mirror pins the package set through `SOURCE_DATE_EPOCH`, so the same revision and the same pins rebuild the same appliance.
+
+probe-rs 0.32 is the initial pin.
+A later pin belongs in `pins.edn` only once hardware qualification records that probe-rs identifies an RP2350 over this SWD wiring.
+
+### Layers
+
+`image/config/probetron.yaml` selects the device, the layout, and five named layers, and each layer owns exactly one runtime invariant.
+Every layer keeps its static files in the matching `.rootfs-overlay/` tree, which rpi-image-gen copies into the root filesystem before that layer's own hooks run.
+
+| Layer                 | Runtime invariant                                                                                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `probetron-runtime`   | The appliance exists: the release archive under `/usr/local`, `bb`, `probe-rs`, `socat`, `gpiod`, `procps`, `sudo`, and `udev`, and the volatile upload directory.     |
+| `probetron-access`    | The lab LAN is the trust boundary: one generated key, an unrestricted `probetron` shell with forwarding, sudo for the one immutable command, and the HTTP key service. |
+| `probetron-hardware`  | The one DUT slot exists and belongs to nobody else: SPI0, UART0 on GPIO14 and GPIO15 with no console, GPIO26 free, and udev rules that reserve every target device.    |
+| `probetron-immutable` | The rig stores nothing: read-only root and boot, sized tmpfs for every writable path, and a journal that dies with its boot.                                           |
+| `probetron-offline`   | The rig asks the internet for nothing: no package timer, no time synchronisation, no radio, and no multicast discovery.                                                |
+
+### What the appliance is
+
+`probetron-runtime` unpacks the release archive into `/usr/local`, so `/usr/local/bin/probetron-rig` loads `/usr/local/lib/probetron` and `/usr/local/sbin/probetron-rig` is the symlink that sudo names.
+It installs the verified Babashka and probe-rs binaries and every other program that the rig runs by absolute path.
+
+`bench` is the locked, non-root account of the image, and it belongs to no SPI, GPIO, dialout, or `probetron` group.
+`probetron-access` takes back the general sudo permission that the base layer grants and removes `bench` from the `sudo` group, so the one rule that survives gives `bench` `/usr/local/sbin/probetron-rig` and nothing else: no shell, no editor, and no package management.
+The public half of the keypair that the build generated authorises `bench`, which keeps an ordinary shell and TCP forwarding, because the target lock and not the login shell owns the hardware.
+
+```text
+http://<host>/probetron_key
+```
+
+One `socat` service answers that one resource and refuses every other request, and it runs as a `probetron-key` system account, so no unauthenticated request is ever answered by root.
+sshd accepts public keys alone, refuses root, resolves no name, and reaps a client that stops answering within a minute, which is what lets rig cleanup release the target lock instead of holding it until somebody reboots the Pi.
+The host identity is generated at build time and host-key regeneration is masked, because a read-only `/etc` cannot make one at first boot and every client already refuses to cache host keys.
+
+`probetron-hardware` enables SPI0, puts the PL011 on GPIO14 and GPIO15, removes the serial console from the kernel command line, and masks the serial getty, so the DUT owns that line alone.
+Disabling Bluetooth is what moves the PL011 onto those two pins in the first place.
+Its udev rules give `/dev/spidev0.0`, `/dev/gpiochip0`, and `/dev/ttyAMA0` to root and the `probetron` group, and name `/dev/spidev_swd0` for the one SPI bus that carries SWD, so a probe request can never reach another SPI device of the Pi.
+
+`probetron-immutable` adds `ro` to the kernel command line and masks `systemd-remount-fs.service`, because the image layout writes `/etc/fstab` after every layer has run and that file asks for `rw`.
+A drop-in mounts `/boot/firmware` read-only for the same reason.
+
+| Volatile path    | Bound                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `/tmp`           | 128 MiB tmpfs                                                                              |
+| `/var/tmp`       | 32 MiB tmpfs                                                                               |
+| `/var/log`       | 32 MiB tmpfs                                                                               |
+| `/run/probetron` | 256 MiB tmpfs, which carries the target lock, the active record, and the one 64 MiB upload |
+| journal          | volatile, at most 32 MiB of `/run`                                                         |
+
+Network lease state already lives in `/run`, the rig identity is fixed at build time, and the automatic EEPROM updater is off, so nothing writes to persistent storage and power loss needs no filesystem repair.
+
+`probetron-offline` masks every package, time, discovery, and maintenance unit, disables the Wi-Fi and Bluetooth radios, and turns off LLMNR and multicast DNS, while wired DHCP, SSH, SPI, GPIO, UART, and USB are untouched.
+
+### The one DUT slot
+
+The DUT udev rule matches one physical Pi receptacle and the CDC tty class, and never a VID, a PID, or a serial descriptor, so any RP2350 board in that receptacle is the DUT and a board in another receptacle is not.
+
+Hardware qualification records that receptacle by connecting a CDC DUT to it and reading its ancestry.
+
+```sh
+udevadm info --attribute-walk --name=/dev/ttyACM0
+```
+
+The board-relative receptacle and the exact `KERNELS` ancestry belong in `image/pins.edn` as `:usb-port-label` and `:usb-kernels`.
+Until somebody measures them, both stay `nil`, `bb image` refuses to build, and the hardware layer refuses to write a rule for a topology that nobody has seen.
+`bb image --validate-only` still passes, because the configuration and the layers are complete and the measurement is the only thing missing.
+
 ## Release archive
 
 `bb package` and `mise run package` write one release archive and its checksum under `build/`.
@@ -363,3 +497,4 @@ The rig owns the target lock, the active record, and the process groups of one o
 The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said.
 It also opens the `connect` and `debug` sessions, publishes the rig byte service or the rig DAP server on a client loopback port, and presents the byte service as a pseudo-terminal when it can.
 `bb package` builds the release archive that a future mise tool installs.
+`bb image` describes the whole appliance to rpi-image-gen and validates that description, and it builds the image once hardware qualification has recorded the one DUT receptacle in `image/pins.edn`.

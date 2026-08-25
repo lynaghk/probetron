@@ -1,0 +1,67 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-access
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Desc: How a lab client reaches the rig. Leaves probetron an
+#  unrestricted shell with forwarding, narrows its sudo to the one immutable
+#  rig entry point, and serves the private half of the image SSH key over
+#  plain unauthenticated HTTP.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: probetron-runtime,openssh-server
+# X-Env-Layer-RequiresProvider: probetron-appliance
+#
+# X-Env-VarRequires: IGconf_device_user1
+# X-Env-VarRequires-Valid: string
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    # The base layer keeps sudo installed only for an account that may run
+    # anything, so Probetron takes that general permission straight back.
+    # What remains is the one rule of this layer's overlay.
+    - |-
+      set -eu
+      rm -f "$1/etc/sudoers.d/010_rpi-passwd" "$1/etc/sudoers.d/010_rpi-nopasswd"
+      chroot "$1" deluser "${IGconf_device_user1}" sudo >/dev/null 2>&1 || true
+      ! chroot "$1" id -nG "${IGconf_device_user1}" | grep -qw sudo ||
+        { echo "probetron-access: ${IGconf_device_user1} still belongs to the sudo group" >&2 ; exit 1 ; }
+      chroot "$1" usermod --lock "${IGconf_device_user1}"
+    # Git records no mode narrower than 0644, so the one sudoers rule takes its
+    # own mode and ownership here, and sudo would refuse to read it otherwise.
+    - |-
+      set -eu
+      chown root:root "$1/etc/sudoers.d/probetron"
+      chmod 0440 "$1/etc/sudoers.d/probetron"
+      chroot "$1" visudo --check --file=/etc/sudoers.d/probetron
+    # The unprivileged account that owns the key service, so no unauthenticated
+    # HTTP request is ever answered by root.
+    - |-
+      set -eu
+      chroot "$1" groupadd --force --system probetron-key
+      chroot "$1" id -u probetron-key >/dev/null 2>&1 ||
+        chroot "$1" useradd --system --gid probetron-key --home-dir /nonexistent \
+          --no-create-home --shell /usr/sbin/nologin probetron-key
+    # The private half of the image keypair, readable by that account alone.
+    # Mode 0640 root:probetron-key keeps the file out of reach of the ordinary
+    # probetron account, which is in neither, so nothing on the rig reads the
+    # key off the disk except the service that serves it. That is a separation
+    # of duties and not secrecy: the lab LAN is the trust boundary, and the key
+    # service hands the same key to anybody who asks for it over plain HTTP.
+    - |-
+      set -eu
+      test -n "${IGconf_probetron_rig_key:-}" && test -f "$IGconf_probetron_rig_key" ||
+        { echo "probetron-access: no rig key: run 'bb image', which generates one keypair per image build" >&2 ; exit 1 ; }
+      install -d -m 0755 "$1/etc/probetron"
+      install -m 0640 "$IGconf_probetron_rig_key" "$1/etc/probetron/probetron_key"
+      chroot "$1" chown root:probetron-key /etc/probetron/probetron_key
+    # One host identity, baked now, because a read-only /etc cannot make one at
+    # first boot. Every client already refuses to cache host keys.
+    - |-
+      set -eu
+      rm -f "$1"/etc/ssh/ssh_host_*
+      ssh-keygen -q -t ed25519 -N '' -C probetron -f "$1/etc/ssh/ssh_host_ed25519_key"
+      ssh-keygen -q -t rsa -b 4096 -N '' -C probetron -f "$1/etc/ssh/ssh_host_rsa_key"
+      ssh-keygen -q -t ecdsa -b 384 -N '' -C probetron -f "$1/etc/ssh/ssh_host_ecdsa_key"
+      chmod 0600 "$1"/etc/ssh/ssh_host_*_key
+      chmod 0644 "$1"/etc/ssh/ssh_host_*_key.pub
+      systemctl --root="$1" mask ssh-hostkeys-generate.service sshd-keygen.service
+    - systemctl --root="$1" enable probetron-key.service
