@@ -7,9 +7,9 @@
   (:require [babashka.cli :as cli]
             [clojure.string :as str]))
 
-(declare fields resolve-field parse-host parse-chip parse-speed-khz parse-baud
-         parse-usb-wait-seconds parse-local-port parse-channel parse-format
-         parse-integer ok invalid hostname? ipv4-literal? ipv6-literal?)
+(declare connect-fields connect-option-errors fields resolve-field parse-host parse-chip
+         parse-speed-khz parse-baud parse-usb-wait-seconds parse-local-port parse-channel
+         parse-format parse-integer ok invalid hostname? ipv4-literal? ipv6-literal?)
 
 ;; Exit statuses of both entry points.
 (def exit-ok 0)
@@ -69,11 +69,6 @@
     :connect (:elf rtt)
     nil))
 
-(defn stdin-elf?
-  "Tell whether an operation sends one ELF file to the rig over standard input."
-  [operation]
-  (some? (stdin-elf operation)))
-
 (defn parse-options
   "Parse one command line against a babashka.cli spec.
 
@@ -92,11 +87,11 @@
 
    Return [values errors]."
   [field-keys context]
-  (reduce (fn [[values errors] key]
-            (let [resolved (resolve-field key context)]
+  (reduce (fn [[values errors] field]
+            (let [resolved (resolve-field field context)]
               (cond
                 (:error resolved) [values (conj errors (:error resolved))]
-                (contains? resolved :value) [(assoc values key (:value resolved)) errors]
+                (contains? resolved :value) [(assoc values field (:value resolved)) errors]
                 :else [values errors])))
           [{} []]
           field-keys))
@@ -130,9 +125,9 @@
 
 (defn elf-header?
   "Tell whether the leading bytes of a file carry the ELF magic number."
-  [bytes]
+  [data]
   (= [0x7f 0x45 0x4c 0x46]
-     (mapv #(bit-and (int %) 0xff) (take 4 bytes))))
+     (mapv #(bit-and (int %) 0xff) (take 4 data))))
 
 (defn build
   "Build a validated public operation from a command keyword and a parsed command line.
@@ -175,33 +170,25 @@
     (let [[values errors] (collect [:host :channel :local-port] context)
           channel (:channel values)
           rtt-path (:rtt opts)
-          [rtt-values rtt-errors] (collect (cond-> []
-                                             (= :uart channel) (conj :baud)
-                                             (= :usb channel) (conj :usb-wait-seconds)
-                                             (some? rtt-path) (into [:chip :speed-khz]))
-                                           context)]
+          rtt? (some? rtt-path)
+          [rtt-values rtt-errors] (collect (connect-fields channel rtt?) context)]
       (finish [(merge values rtt-values) (into errors rtt-errors)]
-              (into [(when (and (:baud opts) (not= :uart channel))
-                       "invalid --baud: it is valid only with --channel uart")
-                     (when (and (:usb-wait-seconds opts) (not= :usb channel))
-                       "invalid --usb-wait-seconds: it is valid only with --channel usb")
-                     (when (and (:chip opts) (nil? rtt-path))
-                       "invalid --chip: it is valid only with --rtt <elf>")
-                     (when (and (:speed-khz opts) (nil? rtt-path))
-                       "invalid --speed-khz: it is valid only with --rtt <elf>")
-                     (unexpected-argument-error args)]
+              (into (conj (connect-option-errors opts channel rtt? "--rtt <elf>")
+                          (unexpected-argument-error args))
                     (when rtt-path (elf-errors rtt-path (elf-facts rtt-path))))
               (fn [values]
-                (cond-> {:operation :connect :host (:host values) :channel (:channel values)}
+                (cond-> {:operation :connect
+                         :host (:host values)
+                         :channel (:channel values)
+                         :local-port (:local-port values)
+                         :rtt (when rtt-path
+                                {:elf rtt-path
+                                 :chip (:chip values)
+                                 :speed-khz (:speed-khz values)})
+                         :pty? (true? (:pty opts))
+                         :reset-on-exit? (true? (:reset-on-exit opts))}
                   (= :uart (:channel values)) (assoc :baud (:baud values))
-                  (= :usb (:channel values)) (assoc :usb-wait-seconds (:usb-wait-seconds values))
-                  true (assoc :local-port (:local-port values)
-                              :rtt (when rtt-path
-                                     {:elf rtt-path
-                                      :chip (:chip values)
-                                      :speed-khz (:speed-khz values)})
-                              :pty? (true? (:pty opts))
-                              :reset-on-exit? (true? (:reset-on-exit opts)))))))
+                  (= :usb (:channel values)) (assoc :usb-wait-seconds (:usb-wait-seconds values))))))
 
     :debug
     (finish (collect [:host :local-port] context)
@@ -210,6 +197,32 @@
                           :host (:host values)
                           :local-port (:local-port values)
                           :reset-on-exit? (true? (:reset-on-exit opts))}))))
+
+(defn connect-fields
+  "Return the extra fields that one connect command resolves.
+
+   The channel decides between a bit rate and a USB wait, and RTT decoding
+   needs the target that probe-rs attaches to."
+  [channel rtt?]
+  (cond-> []
+    (= :uart channel) (conj :baud)
+    (= :usb channel) (conj :usb-wait-seconds)
+    rtt? (into [:chip :speed-khz])))
+
+(defn connect-option-errors
+  "Return the connect options that belong to another channel or to no RTT at all.
+
+   Both front ends refuse the same combinations, and each one names the RTT
+   option the way its own command line spells it."
+  [opts channel rtt? rtt-flag]
+  [(when (and (:baud opts) (not= :uart channel))
+     "invalid --baud: it is valid only with --channel uart")
+   (when (and (:usb-wait-seconds opts) (not= :usb channel))
+     "invalid --usb-wait-seconds: it is valid only with --channel usb")
+   (when (and (:chip opts) (not rtt?))
+     (str "invalid --chip: it is valid only with " rtt-flag))
+   (when (and (:speed-khz opts) (not rtt?))
+     (str "invalid --speed-khz: it is valid only with " rtt-flag))])
 
 (def fields
   "How every option-carried value is named, defaulted, and validated."
@@ -227,9 +240,9 @@
 
 (defn resolve-field
   "Resolve one field from the explicit option, the environment, and the default."
-  [key {:keys [opts env use-env?]}]
-  (let [{:keys [flag env-var parse default required?]} (get fields key)
-        explicit (get opts key)
+  [field {:keys [opts env use-env?]}]
+  (let [{:keys [flag env-var parse default required?]} (get fields field)
+        explicit (get opts field)
         from-environment (when (and use-env? env-var) (get env env-var))
         raw (if (some? explicit) explicit from-environment)
         source (if (some? explicit) flag env-var)]
@@ -239,7 +252,7 @@
                       result
                       {:error (str "invalid " source " " (pr-str raw) ": " (:error result))}))
       (some? default) {:value default}
-      required? {:error (str "missing " flag ": pass " flag " " (:label (get fields key))
+      required? {:error (str "missing " flag ": pass " flag " " (:label (get fields field))
                              (when (and use-env? env-var) (str " or set " env-var)))}
       :else {})))
 
@@ -330,7 +343,7 @@
   "Tell whether a string is an IPv6 literal, with an optional zone identifier."
   [value]
   (let [[address zone & extra] (str/split value #"%" -1)]
-    (and (nil? (seq extra))
+    (and (empty? extra)
          (or (nil? zone) (re-matches #"(?i)[a-z0-9-]+" zone))
          (re-matches #"(?i)[0-9a-f:]+" address)
          (<= 2 (count (filter #{\:} address)) 7)

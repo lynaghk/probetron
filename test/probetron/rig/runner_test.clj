@@ -7,6 +7,7 @@
             [clojure.test :refer [deftest is testing]]
             [probetron.rig.fixture :as fixture]
             [probetron.rig.runner :as runner]
+            [probetron.stand-in :as stand-in]
             [probetron.operation :as op])
   (:import (java.io StringWriter)
            (java.util.concurrent TimeUnit)))
@@ -199,7 +200,7 @@
 (defn alive?
   "Tell whether a pid still runs."
   [pid]
-  (fixture/alive? pid))
+  (stand-in/alive? pid))
 
 (defn elapsed-ms
   "Return how many milliseconds passed since a nanosecond mark."

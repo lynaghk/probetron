@@ -103,7 +103,7 @@
    It runs once, whether the operation finished, the client disconnected, or a
    handled signal arrived, and the default path leaves the target alone."
   [state runtime]
-  (let [[before _] (swap-vals! state assoc :cleaned? true)]
+  (let [[before] (swap-vals! state assoc :cleaned? true)]
     (when-not (:cleaned? before)
       (stop-groups! (:groups before) runtime)
       (when (:reset-on-exit? before) (run-reset! runtime))
@@ -181,12 +181,13 @@
 (defn report-status!
   "Report the state of the target lock and its owner without opening the hardware."
   [{:keys [format]} {:keys [paths] :as runtime}]
-  (let [held (probe-lock runtime)]
-    (if (= :unavailable held)
+  (let [lock (probe-lock runtime)
+        held? (= :held lock)]
+    (if (= :unavailable lock)
       (fail! (str "cannot read the target lock " (:lock paths) ": check the rig installation"))
-      (let [owner (when (= :held held) (read-owner! runtime))]
-        (when (= :free held) (delete-active! runtime))
-        (println (lifecycle/render-status (lifecycle/status-report (= :held held) owner) format))
+      (let [owner (when held? (read-owner! runtime))]
+        (when-not held? (delete-active! runtime))
+        (println (lifecycle/render-status (lifecycle/status-report held? owner) format))
         op/exit-ok))))
 
 (defn probe-lock
@@ -263,13 +264,13 @@
 
 (def default-filesystem
   "The real filesystem behind the runtime."
-  {:directory? (fn [path] (fs/directory? path))
-   :exists? (fn [path] (fs/exists? path))
-   :readable? (fn [path] (fs/readable? path))
-   :glob (fn [pattern] (glob-paths pattern))
+  {:directory? fs/directory?
+   :exists? fs/exists?
+   :readable? fs/readable?
+   :glob #'glob-paths
    :read-file (fn [path] (when (fs/exists? path) (slurp (fs/file path))))
-   :write-file! (fn [path text] (write-atomically! path text))
-   :delete-file! (fn [path] (fs/delete-if-exists path))})
+   :write-file! #'write-atomically!
+   :delete-file! fs/delete-if-exists})
 
 (def default-runtime
   "The production wiring of the clock, the current process, and subprocesses."
@@ -280,7 +281,7 @@
    :clock (fn [] (java.time.Instant/now))
    :pid (fn [] (.pid (java.lang.ProcessHandle/current)))
    :stdin (fn [] System/in)
-   :spawn! (fn [argv opts] (process/process argv opts))
+   :spawn! process/process
    :run! (fn [argv opts]
            @(process/process argv (merge {:out :inherit :err :inherit :throw false} opts)))})
 

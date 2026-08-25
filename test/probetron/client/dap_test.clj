@@ -5,6 +5,7 @@
             [clojure.test :refer [deftest is testing]]
             [probetron.client.tunnel-fixture :as fixture]
             [probetron.client.tunnel-test :as tunnel-test]
+            [probetron.stand-in :as stand-in]
             [probetron.operation :as op])
   (:import (java.util.concurrent TimeUnit)))
 
@@ -41,7 +42,7 @@
 (deftest the-outer-command-lives-until-the-client-ends-it
   (tunnel-test/with-session! debug-session {}
     (fn [{:keys [client result]}]
-      (is (fixture/alive? (fixture/recorded-pid client "ssh"))
+      (is (stand-in/alive? (fixture/recorded-pid client "ssh"))
           "the outer command keeps the rig lock while an editor connects and disconnects")
       (is (= :pending (deref result 100 :pending)))))
   (testing "the status of the rig is the status of the client"
@@ -67,10 +68,10 @@
                                      {:out :string :err :string})
             ssh (fixture/await-pid! client "ssh")]
         (is (some? ssh) "the session reaches the rig before the signal arrives")
-        (fixture/signal! "-TERM" (.pid (:proc session)))
+        (stand-in/signal! "-TERM" (.pid (:proc session)))
         (is (.waitFor ^Process (:proc session) 15000 TimeUnit/MILLISECONDS)
             "a handled signal must end the client")
-        (is (not (fixture/alive? ssh)) "cleanup must end the outer SSH process")
+        (is (not (stand-in/alive? ssh)) "cleanup must end the outer SSH process")
         (is (empty? (fs/list-dir (fixture/path client "run")))
             "and a debug session leaves nothing volatile behind"))
       (finally

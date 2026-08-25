@@ -5,6 +5,7 @@
             [clojure.test :refer [deftest is testing]]
             [probetron.rig.session-fixture :as fixture]
             [probetron.rig.session-test :as session-test]
+            [probetron.stand-in :as stand-in]
             [probetron.operation :as op])
   (:import (java.net InetAddress Socket)
            (java.util.concurrent TimeUnit)))
@@ -56,14 +57,14 @@
             port (parse-long (fixture/await-file! directory "dap.port"))]
         (visit-dap! port)
         (await-sessions! directory 1)
-        (is (fixture/alive? server) "the DAP server outlives the client that left")
+        (is (stand-in/alive? server) "the DAP server outlives the client that left")
         (is (= :pending (deref session 100 :pending)))
         (is (= :debug (:command (active-owner directory)))
             "and the outer debug command still owns the target lock")
         (testing "an IDE connects again to the same server and the same target"
           (visit-dap! port)
           (await-sessions! directory 2)
-          (is (fixture/alive? server))
+          (is (stand-in/alive? server))
           (is (= :pending (deref session 100 :pending))))))))
 
 (deftest a-debug-session-preserves-the-target-unless-reset-on-exit-asks-for-one
@@ -87,13 +88,13 @@
             pids (into {} (map (fn [name] [name (fixture/await-pid! directory name)]))
                        (:debug fixture/helper-names))]
         (is (every? some? (vals pids)) "the server runs before the signal arrives")
-        (fixture/signal! "-TERM" (.pid (:proc rig)))
+        (stand-in/signal! "-TERM" (.pid (:proc rig)))
         (is (.waitFor ^Process (:proc rig) 15000 TimeUnit/MILLISECONDS)
             "a handled signal must end the fixture rig")
         (is (not (str/includes? (:err @rig) "DAP service"))
             "a handled signal must not accuse the server it reaped")
         (doseq [[name pid] pids]
-          (is (not (fixture/alive? pid)) (str "cleanup must reap " name)))
+          (is (not (stand-in/alive? pid)) (str "cleanup must reap " name)))
         (is (not (fs/exists? (fs/path directory "active.edn")))
             "cleanup must drop the active metadata")
         (is (not (fs/exists? (fs/path directory "reset.log")))

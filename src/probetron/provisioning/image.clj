@@ -14,14 +14,15 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [probetron.operation :as op]
+            [probetron.provisioning.archive :as archive]
             [probetron.provisioning.package :as package]
             [probetron.version :as version]))
 
-(declare usage build! validate! read-pins! check-host! check-glibc! checkout!
+(declare usage build! validate! checked-pins! read-pins! check-host! check-glibc! checkout!
          report-topology! require-privilege! stage! generate-image! publish! report
          layer-files pipeline-layers canonical-env overrides ig-program
-         capture! stream! download! extract! sha256-file os-release environment-file
-         fail! fatal blank? move!)
+         capture! stream! download! extract! sha-256-file os-release environment-file
+         fail! fatal move!)
 
 (def project-root
   "The Probetron project directory, which holds bb.edn, image/, and build/.
@@ -80,8 +81,8 @@
 (defn build!
   "Run the whole build, or stop after validation, and return an exit status."
   [{:keys [validate-only overrides]}]
-  (let [pins (read-pins!)
-        checkout (do (check-host! pins) (check-glibc! pins) (checkout! pins))]
+  (let [pins (checked-pins!)
+        checkout (checkout! pins)]
     (validate! pins checkout)
     (println validation-message)
     (if validate-only
@@ -108,6 +109,13 @@
     (str "A finished build writes the compressed image and its checksum under " build-directory "/.")]))
 
 ;;; Pins
+
+(defn checked-pins!
+  "Return the pinned inputs, and fail before any download unless this host can build them."
+  []
+  (doto (read-pins!)
+    check-host!
+    check-glibc!))
 
 (defn read-pins!
   "Return the pinned inputs of the image, or fail when nobody recorded them."
@@ -234,7 +242,7 @@
   (into ["essential"]
         (for [line (str/split-lines settings)
               :let [[_ key value] (re-matches #"(IGconf_device_layer|IGconf_image_layer|IGconf_layer_[A-Za-z0-9_]+)=\"(.*)\"" line)]
-              :when (and key (not (blank? value)))]
+              :when (and key (not (str/blank? value)))]
           value)))
 
 (defn canonical-env
@@ -267,7 +275,7 @@
    rig can see. A bench that really does present a second one records the
    receptacle and narrows the rule to that physical socket."
   [pins]
-  (when (blank? (get-in pins [:dut :usb-kernels]))
+  (when (str/blank? (get-in pins [:dut :usb-kernels]))
     (binding [*out* *err*]
       (println (str "image: no receptacle recorded in " pins-file
                     ", so any CDC serial device is the DUT"))
@@ -324,9 +332,9 @@
         archive (fs/path downloads (fs/file-name url))
         unpacked (fs/path project-root cache-directory "stage" (fs/file-name member))]
     (fs/create-dirs downloads)
-    (when-not (and (fs/regular-file? archive) (= sha256 (sha256-file archive)))
+    (when-not (and (fs/regular-file? archive) (= sha256 (sha-256-file archive)))
       (download! url archive))
-    (let [found (sha256-file archive)]
+    (let [found (sha-256-file archive)]
       (when-not (= sha256 found)
         (fail! (str "the archive " url " has digest " found " and " pins-file " pins " sha256
                     ": pin the digest that the release publishes, or fetch the archive again"))))
@@ -401,9 +409,9 @@
     (stream! {:out (fs/file partial)}
              ["xz" "--compress" "--threads=0" "-9" "--stdout" (str image)]
              (str "cannot compress " image))
-    (let [digest (sha256-file partial)
+    (let [digest (sha-256-file partial)
           record (fs/path directory (str name ".sha256.part"))]
-      (spit (fs/file record) (str digest "  " name \newline))
+      (spit (fs/file record) (package/checksum-line digest name))
       (move! partial compressed)
       (move! record checksum)
       {:image compressed :checksum checksum :sha256 digest})))
@@ -439,8 +447,11 @@
     (when-not (zero? exit)
       (fail! (str message ": exit status " exit)))))
 
-(defn sha256-file
-  "Return the SHA-256 of one file as lower-case hexadecimal."
+(defn sha-256-file
+  "Return the SHA-256 of one file as lower-case hexadecimal.
+
+   An image is larger than memory allows in one piece, so the digest reads it
+   in blocks rather than as bytes the way a release archive does."
   [path]
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")
         buffer (byte-array 65536)]
@@ -450,7 +461,7 @@
           (when (pos? read)
             (.update digest buffer 0 read)
             (recur)))))
-    (str/join (map #(format "%02x" %) (.digest digest)))))
+    (archive/hex (.digest digest))))
 
 (defn os-release
   "Return /etc/os-release as a map of its unquoted keys and values."
@@ -471,11 +482,6 @@
   "Replace one path with another in one step."
   [from to]
   (fs/move from to {:replace-existing true :atomic-move true}))
-
-(defn blank?
-  "Return whether a pinned value is missing or empty."
-  [value]
-  (or (nil? value) (str/blank? (str value))))
 
 (defn fail!
   "Stop the build with one diagnostic that names its repair."

@@ -27,31 +27,31 @@
 
 (defn error
   "Return why an upload is not a flashable RP2350 ELF, or nil when it is one."
-  [bytes]
-  (let [size (alength ^bytes bytes)]
+  [data]
+  (let [size (alength ^bytes data)]
     (if (< size header-size)
       (str "expected at least the " header-size "-byte ELF32 header, but the upload carries "
            size " bytes")
-      (or (header-error bytes)
-          (table-error "program header" (u32 bytes 28) (u16 bytes 44) (u16 bytes 42)
+      (or (header-error data)
+          (table-error "program header" (u32 data 28) (u16 data 44) (u16 data 42)
                        program-entry-size size)
-          (table-error "section header" (u32 bytes 32) (u16 bytes 48) (u16 bytes 46)
+          (table-error "section header" (u32 data 32) (u16 data 48) (u16 data 46)
                        section-entry-size size)
-          (load-segment-error bytes size)))))
+          (load-segment-error data size)))))
 
 (defn header-error
   "Return why the ELF32 header does not describe an RP2350 image, or nil."
-  [bytes]
-  (let [machine (u16 bytes 18)
-        declared (u16 bytes 40)]
+  [data]
+  (let [machine (u16 data 18)
+        declared (u16 data 40)]
     (cond
-      (not= [0x7f 0x45 0x4c 0x46] (mapv #(u8 bytes %) (range 4)))
+      (not= [0x7f 0x45 0x4c 0x46] (mapv #(u8 data %) (range 4)))
       "expected the ELF magic number"
 
-      (not= 1 (u8 bytes 4)) "expected a 32-bit ELF file"
-      (not= 1 (u8 bytes 5)) "expected a little-endian ELF file"
-      (not= 1 (u8 bytes 6)) "expected ELF identification version 1"
-      (not= 1 (u32 bytes 20)) "expected ELF object version 1"
+      (not= 1 (u8 data 4)) "expected a 32-bit ELF file"
+      (not= 1 (u8 data 5)) "expected a little-endian ELF file"
+      (not= 1 (u8 data 6)) "expected ELF identification version 1"
+      (not= 1 (u32 data 20)) "expected ELF object version 1"
 
       (not (machines machine))
       (str "expected an ARM or RISC-V machine, but the header names machine " machine)
@@ -74,17 +74,17 @@
 
 (defn load-segment-error
   "Return why one load segment reads outside the upload, or nil when all of them fit."
-  [bytes size]
-  (let [offset (u32 bytes 28)]
+  [data size]
+  (let [offset (u32 data 28)]
     (first (keep (fn [index]
                    (let [entry (+ offset (* index program-entry-size))
-                         start (u32 bytes (+ entry 4))
-                         length (u32 bytes (+ entry 16))]
-                     (when (and (= program-type-load (u32 bytes entry))
+                         start (u32 data (+ entry 4))
+                         length (u32 data (+ entry 16))]
+                     (when (and (= program-type-load (u32 data entry))
                                 (> (+ start length) size))
                        (str "load segment " index " reads " length " bytes at " start
                             ", which lie outside the " size "-byte upload"))))
-                 (range (u16 bytes 44))))))
+                 (range (u16 data 44))))))
 
 (def machines
   "The machine values of the two RP2350 cores."
@@ -92,15 +92,15 @@
 
 (defn u8
   "Read one unsigned byte."
-  [bytes offset]
-  (bit-and (aget ^bytes bytes (int offset)) 0xff))
+  [data offset]
+  (bit-and (aget ^bytes data (int offset)) 0xff))
 
 (defn u16
   "Read one unsigned little-endian halfword."
-  [bytes offset]
-  (+ (u8 bytes offset) (* 256 (u8 bytes (inc offset)))))
+  [data offset]
+  (+ (u8 data offset) (* 256 (u8 data (inc offset)))))
 
 (defn u32
   "Read one unsigned little-endian word."
-  [bytes offset]
-  (+ (u16 bytes offset) (* 65536 (long (u16 bytes (+ offset 2))))))
+  [data offset]
+  (+ (u16 data offset) (* 65536 (long (u16 data (+ offset 2))))))

@@ -15,8 +15,7 @@
             [probetron.version :as version]))
 
 (declare usage package! plan release-version library-sources library-members members directories
-         source-bytes write-file! archive-name checksum-line
-         report unsafe-member inside? failure)
+         write-file! archive-name checksum-line report unsafe-member inside? fatal failure)
 
 (def build-directory
   "The only directory a release archive may appear in, relative to the project root."
@@ -63,14 +62,12 @@
         {:keys [args option-error] :as parsed} (op/parse-options argv {:tag {:coerce :string}})]
     (cond
       (some #{"--help" "-h"} argv) (do (println usage) op/exit-ok)
-      option-error (do (binding [*out* *err*] (println (str "package: " (:message option-error))))
-                       op/exit-usage)
-      (seq args) (do (binding [*out* *err*] (println (str "package: unexpected argument " (first args))))
-                     op/exit-usage)
+      option-error (fatal (:message option-error) op/exit-usage)
+      (seq args) (fatal (str "unexpected argument " (first args)) op/exit-usage)
       :else
       (let [result (package! {:tag (:tag (:opts parsed))})]
         (if-let [message (:error result)]
-          (do (binding [*out* *err*] (println (str "package: " message))) op/exit-failure)
+          (fatal message op/exit-failure)
           (do (println (report result)) op/exit-ok))))))
 
 (defn package!
@@ -112,11 +109,11 @@
           :else
           (let [members (for [member (:members outline)]
                           (cond-> member
-                            (= :file (:kind member)) (assoc :bytes (source-bytes (:source member)))))
-                bytes (archive/gzip (archive/tar members))
-                digest (archive/sha-256-hex bytes)]
+                            (= :file (:kind member)) (assoc :content (fs/read-all-bytes (:source member)))))
+                content (archive/gzip (archive/tar members))
+                digest (archive/sha-256-hex content)]
             (fs/create-dirs build-dir)
-            (write-file! archive-file bytes)
+            (write-file! archive-file content)
             (write-file! checksum-file (.getBytes (checksum-line digest (fs/file-name archive-file)) "UTF-8"))
             {:version (:version outline)
              :archive (str archive-file)
@@ -230,11 +227,6 @@
   [version]
   (str "probetron-" version ".tar.gz"))
 
-(defn archive-digest
-  "Return the SHA-256 digest of a file that a release wrote."
-  [path]
-  (archive/sha-256-hex (fs/read-all-bytes path)))
-
 (defn checksum-line
   "Format a digest the way sha256sum reads and writes it."
   [digest name]
@@ -246,16 +238,11 @@
   (= (str (fs/normalize (fs/absolutize directory)))
      (str (fs/parent (fs/normalize (fs/absolutize path))))))
 
-(defn source-bytes
-  "Read one source file as bytes."
-  [path]
-  (fs/read-all-bytes path))
-
 (defn write-file!
   "Write bytes to a path, replacing whatever was there."
-  [path bytes]
+  [path content]
   (with-open [stream (io/output-stream (fs/file path))]
-    (.write stream ^bytes bytes)))
+    (.write stream ^bytes content)))
 
 (defn report
   "Describe a finished release for a human."
@@ -264,6 +251,12 @@
                   (str "archive: " archive)
                   (str "checksum: " checksum)
                   (str "sha256: " sha256)]))
+
+(defn fatal
+  "Report one diagnostic on standard error and return an exit status."
+  [message status]
+  (binding [*out* *err*] (println (str "package: " message)))
+  status)
 
 (defn failure
   "Wrap the reason a release cannot be packaged."

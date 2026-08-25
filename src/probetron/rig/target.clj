@@ -19,10 +19,6 @@
 (declare report-information! flash! erase! pulse-reset!
          capture! upload-path receive-elf! with-upload! copy-bounded! missing-status refuse!)
 
-(def operations
-  "The short operations that this shell carries out."
-  #{:info :flash :erase :reset})
-
 (defn perform!
   "Carry out one short operation that already owns the target."
   [operation session]

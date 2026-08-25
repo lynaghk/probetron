@@ -4,10 +4,10 @@
    It owns a target lock inside a temporary directory, starts one long-running
    helper that itself leaves a grandchild behind, and then waits for a signal."
   (:require [babashka.fs :as fs]
-            [clojure.string :as str]
-            [probetron.rig.runner :as runner]))
+            [probetron.rig.runner :as runner]
+            [probetron.stand-in :as stand-in]))
 
-(declare hold! helper-command await-file! record-reset! pid-of alive?)
+(declare hold! helper-command record-reset! pid-of)
 
 (defn -main
   "Own a temporary target until a signal arrives.
@@ -30,8 +30,8 @@
   "Start the owned helper, announce ownership, and wait for cleanup."
   [directory session]
   ((:start-helper! session) (helper-command directory) {:out :inherit :err :inherit})
-  (await-file! (fs/path directory "helper.pid"))
-  (await-file! (fs/path directory "grandchild.pid"))
+  (stand-in/await-text! (fs/path directory "helper.pid"))
+  (stand-in/await-text! (fs/path directory "grandchild.pid"))
   (println "holding")
   (flush)
   @(promise))
@@ -43,34 +43,17 @@
                        "sleep 300 & echo $! > " directory "/grandchild.pid; "
                        "wait")])
 
-(defn await-file!
-  "Wait until a helper has recorded one pid."
-  [path]
-  (loop [attempts 500]
-    (when (and (pos? attempts) (not (pos? (or (when (fs/exists? path) (fs/size path)) 0))))
-      (Thread/sleep 10)
-      (recur (dec attempts)))))
-
 (defn record-reset!
   "Record whether the owned children were already gone when the reset ran."
   [directory]
   (spit (fs/file (fs/path directory "reset.log"))
         (str "reset"
-             " helper=" (if (alive? (pid-of directory "helper.pid")) "alive" "gone")
-             " grandchild=" (if (alive? (pid-of directory "grandchild.pid")) "alive" "gone")
+             " helper=" (if (stand-in/alive? (pid-of directory "helper.pid")) "alive" "gone")
+             " grandchild=" (if (stand-in/alive? (pid-of directory "grandchild.pid")) "alive" "gone")
              "\n")
         :append true))
 
 (defn pid-of
   "Return the pid that a helper recorded."
   [directory name]
-  (let [file (fs/file (fs/path directory name))]
-    (when (fs/exists? file) (parse-long (str/trim (slurp file))))))
-
-(defn alive?
-  "Tell whether a pid still runs. A zombie waits for its parent, so it counts as gone."
-  [pid]
-  (let [status (fs/path "/proc" (str pid) "status")]
-    (boolean (and pid
-                  (fs/exists? status)
-                  (not (re-find #"(?m)^State:\s+Z" (String. (fs/read-all-bytes status))))))))
+  (stand-in/pid-in (fs/path directory name)))

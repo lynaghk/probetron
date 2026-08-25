@@ -6,6 +6,7 @@
             [probetron.rig.runner :as runner]
             [probetron.rig.session-fixture :as fixture]
             [probetron.rig.target-test :as target-test]
+            [probetron.stand-in :as stand-in]
             [probetron.operation :as op])
   (:import (java.io StringWriter)
            (java.util.concurrent TimeUnit)))
@@ -105,11 +106,11 @@
       (let [bridge (helper-call @calls "bridge")
             decoder (helper-call @calls "rtt")]
         (is (= 2 (count @calls)) "the bridge and the decoder are two owned children")
-        (is (fixture/alive? (fixture/await-pid! directory "bridge")))
-        (is (fixture/alive? (fixture/await-pid! directory "rtt")))
+        (is (stand-in/alive? (fixture/await-pid! directory "bridge")))
+        (is (stand-in/alive? (fixture/await-pid! directory "rtt")))
         (testing "the decoder names the Linux SPI selector and the SWD protocol"
           (is (= [(probe-rs directory) "attach" "--probe" "0:0:/dev/spidev0.0"
-                  "--chip" "RP235x" "--protocol" "swd" "--speed" "1000"]
+                  "--protocol" "swd" "--chip" "RP235x" "--speed" "1000"]
                  (vec (butlast (:argv decoder)))))
           (is (str/starts-with? (last (:argv decoder))
                                 (str (fs/path directory "uploads")))))
@@ -125,10 +126,10 @@
     (fn [{:keys [directory session]}]
       (let [bridge (fixture/await-pid! directory "bridge")
             decoder (fixture/await-pid! directory "rtt")]
-        (fixture/signal! "-KILL" decoder)
+        (stand-in/signal! "-KILL" decoder)
         (Thread/sleep 500)
-        (is (not (fixture/alive? decoder)))
-        (is (fixture/alive? bridge) "the byte bridge outlives its decoder")
+        (is (not (stand-in/alive? decoder)))
+        (is (stand-in/alive? bridge) "the byte bridge outlives its decoder")
         (is (= :pending (deref session 100 :pending))
             "and the session keeps the target until its listener ends")))))
 
@@ -164,12 +165,12 @@
             pids (into {} (map (fn [name] [name (fixture/await-pid! directory name)]))
                        (:connect fixture/helper-names))]
         (is (every? some? (vals pids)) "both children run before the signal arrives")
-        (fixture/signal! "-TERM" (.pid (:proc rig)))
+        (stand-in/signal! "-TERM" (.pid (:proc rig)))
         (await-exit! rig)
         (is (not (str/includes? (:err @rig) "byte service"))
             "a handled signal must not accuse the byte service it reaped")
         (doseq [[name pid] pids]
-          (is (not (fixture/alive? pid)) (str "cleanup must reap " name)))
+          (is (not (stand-in/alive? pid)) (str "cleanup must reap " name)))
         (is (empty? (fs/list-dir (fs/path directory "uploads")))
             "cleanup must remove the RTT upload")
         (is (not (fs/exists? (fs/path directory "active.edn")))

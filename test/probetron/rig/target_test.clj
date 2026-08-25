@@ -84,8 +84,8 @@
         [download reset] calls]
     (is (= op/exit-ok exit))
     (is (= 2 (count calls)) "flash downloads once and resets once")
-    (is (= [(probe-rs directory) "download" "--probe" "0:0:/dev/spidev0.0" "--chip" "RP235x"
-            "--protocol" "swd" "--speed" "4000" "--verify"]
+    (is (= [(probe-rs directory) "download" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
+            "--chip" "RP235x" "--speed" "4000" "--verify"]
            (vec (butlast download))))
     (is (str/starts-with? (last download) (str (fs/path directory "uploads"))))
     (is (= (seq image) (seq @uploaded)) "probe-rs reads exactly what the client sent")
@@ -152,8 +152,8 @@
         (with-rig! {:operation :erase :chip "RP235x" :speed-khz 1000}
                     {:responses (by-command {:erase {:exit 3 :err "Error: erase failed"}})})]
     (is (= 3 exit) "the rig gives back the status probe-rs returned")
-    (is (= [[(probe-rs directory) "erase" "--probe" "0:0:/dev/spidev0.0" "--chip" "RP235x"
-             "--protocol" "swd" "--speed" "1000"]]
+    (is (= [[(probe-rs directory) "erase" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
+             "--chip" "RP235x" "--speed" "1000"]]
            calls)
         "a failed erase must not run a second destructive attempt")))
 

@@ -11,12 +11,13 @@
             [babashka.process :as process]
             [clojure.string :as str]
             [probetron.client.session :as session]
-            [probetron.client.tunnel :as tunnel])
+            [probetron.client.tunnel :as tunnel]
+            [probetron.stand-in :as stand-in])
   (:import (java.io StringWriter)))
 
 (declare client! create-client! write-program! ssh-program socat-program runtime! recording-spawn!
          program-name path key-path program call-of recorded-argv recorded-stdin remote-command
-         recorded-pid await-pid! await-output! alive? signal! release! stop-all! elf)
+         recorded-pid await-output! release! stop-all! elf)
 
 (def host
   "The rig that every temporary client reaches."
@@ -188,19 +189,12 @@
 (defn recorded-pid
   "Return the pid that one stand-in recorded, or nil when it recorded none."
   [client name]
-  (let [file (path client (str name ".pid"))]
-    (when (and (fs/exists? file) (pos? (fs/size file)))
-      (parse-long (str/trim (slurp (fs/file file)))))))
+  (stand-in/pid-in (path client (str name ".pid"))))
 
 (defn await-pid!
   "Wait until one stand-in has recorded its pid and return it."
   [client name]
-  (loop [attempts 1000]
-    (if-let [pid (recorded-pid client name)]
-      pid
-      (when (pos? attempts)
-        (Thread/sleep 10)
-        (recur (dec attempts))))))
+  (stand-in/await-pid! (path client (str name ".pid"))))
 
 (defn await-output!
   "Wait until a stream of the client carries an expected fragment and return the stream."
@@ -211,19 +205,6 @@
         text
         (do (Thread/sleep 10)
             (recur (dec attempts)))))))
-
-(defn alive?
-  "Tell whether a pid still runs. A zombie waits for its parent, so it counts as gone."
-  [pid]
-  (let [status (fs/path "/proc" (str pid) "status")]
-    (boolean (and pid
-                  (fs/exists? status)
-                  (not (re-find #"(?m)^State:\s+Z" (String. (fs/read-all-bytes status))))))))
-
-(defn signal!
-  "Send one signal to one process."
-  [signal pid]
-  (process/shell {:continue true :out :string :err :string} "/bin/kill" signal (str pid)))
 
 (defn release!
   "Let the stand-in rig end the outer command of one session."
@@ -237,7 +218,7 @@
   (release! client)
   (doseq [name programs]
     (when-let [pid (recorded-pid client name)]
-      (signal! "-KILL" pid))))
+      (stand-in/signal! "-KILL" pid))))
 
 (defn elf
   "Write a small ELF stand-in inside the temporary client and return its path."

@@ -618,9 +618,9 @@ The rig commands are equally fixed.
 
 ```text
 probe-rs info     --probe 0:0:/dev/spidev0.0 --protocol swd
-probe-rs download --probe 0:0:/dev/spidev0.0 --chip RP2350 --protocol swd --speed 1000 --verify <upload>
-probe-rs erase    --probe 0:0:/dev/spidev0.0 --chip RP2350 --protocol swd --speed 1000
-probe-rs attach   --probe 0:0:/dev/spidev0.0 --chip RP2350 --protocol swd --speed 1000 <upload>
+probe-rs download --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 1000 --verify <upload>
+probe-rs erase    --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 1000
+probe-rs attach   --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 1000 <upload>
 probe-rs dap-server --port 50000 --ip 127.0.0.1
 gpioset --chip /dev/gpiochip0 --hold-period 100ms 26=0
 socat TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1 FILE:/dev/ttyAMA0,raw,echo=0,b115200
@@ -780,6 +780,7 @@ A release archive carries every source file except `provisioning/`, because a cl
 | `bin/probetron`                          | public client entry point                                          |
 | `bin/probetron-rig`                      | rig entry point that the client reaches over SSH                   |
 | `src/probetron/operation.clj`            | pure operation model, validators, and rig command construction     |
+| `src/probetron/frontend.clj`             | pure command-line dispatch that both entry points share            |
 | `src/probetron/version.clj`              | the release version that every role reports                        |
 | `src/probetron/client/cli.clj`           | pure parser of the public command line                             |
 | `src/probetron/client/command.clj`       | pure remote command, SSH argv, and key cache paths                 |

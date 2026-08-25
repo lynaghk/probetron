@@ -14,14 +14,14 @@
             [babashka.process :as process]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [probetron.rig.fixture :as fixture]
             [probetron.rig.runner :as runner]
-            [probetron.rig.session :as session])
+            [probetron.rig.session :as session]
+            [probetron.stand-in :as stand-in])
   (:import (java.io ByteArrayInputStream)))
 
 (declare appliance! create-appliance! write-listener! listener-source device-names upload-stream
          spawn-adapter helper-name stand-in-command record-reset! release! released? stop-all!
-         recorded-pid await-pid! await-file! alive? signal!)
+         recorded-pid)
 
 (def helper-names
   "The stand-ins that replace the owned children of each long session."
@@ -161,7 +161,7 @@
              (str/join (for [name (mapcat val helper-names)
                              :let [pid (recorded-pid directory name)]
                              :when pid]
-                         (str " " name "=" (if (alive? pid) "alive" "gone"))))
+                         (str " " name "=" (if (stand-in/alive? pid) "alive" "gone"))))
              "\n")
         :append true))
 
@@ -181,40 +181,19 @@
   [directory]
   (doseq [name (mapcat val helper-names)]
     (when-let [pid (recorded-pid directory name)]
-      (signal! "-KILL" pid))))
-
-(defn signal!
-  "Send one signal to one process."
-  [signal pid]
-  (process/shell {:continue true :out :string :err :string} "/bin/kill" signal (str pid)))
+      (stand-in/signal! "-KILL" pid))))
 
 (defn recorded-pid
   "Return the pid that one stand-in recorded, or nil when it recorded none."
   [directory name]
-  (fixture/pid-of directory (str name ".pid")))
+  (stand-in/pid-in (fs/path directory (str name ".pid"))))
 
 (defn await-pid!
   "Wait until one stand-in has recorded its pid and return it."
   [directory name]
-  (loop [attempts 1000]
-    (if-let [pid (recorded-pid directory name)]
-      pid
-      (when (pos? attempts)
-        (Thread/sleep 10)
-        (recur (dec attempts))))))
+  (stand-in/await-pid! (fs/path directory (str name ".pid"))))
 
 (defn await-file!
   "Wait until one file of the appliance carries text and return that text."
   [directory name]
-  (let [file (fs/path directory name)]
-    (loop [attempts 1000]
-      (if (pos? (if (fs/exists? file) (fs/size file) 0))
-        (str/trim (slurp (fs/file file)))
-        (when (pos? attempts)
-          (Thread/sleep 10)
-          (recur (dec attempts)))))))
-
-(defn alive?
-  "Tell whether a pid still runs."
-  [pid]
-  (fixture/alive? pid))
+  (stand-in/await-text! (fs/path directory name)))

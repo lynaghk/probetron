@@ -148,9 +148,8 @@
 (defn probe-command
   "Return one probe-rs argv with the explicit probe, protocol, chip, and speed."
   [{:keys [probe-rs]} {:keys [probe-selector]} verb {:keys [chip speed-khz]}]
-  (cond-> [probe-rs verb "--probe" probe-selector]
+  (cond-> [probe-rs verb "--probe" probe-selector "--protocol" swd-protocol]
     chip (into ["--chip" chip])
-    true (into ["--protocol" swd-protocol])
     speed-khz (into ["--speed" (str speed-khz)])))
 
 (defn reset-command

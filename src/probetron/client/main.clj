@@ -8,40 +8,39 @@
             [probetron.client.tunnel :as tunnel]
             [probetron.operation :as op]))
 
-(declare environment elf-facts file-header report! execute!)
+(declare elf-facts file-header report! execute!)
 
 (defn -main
-  "Parse the public command line and carry out the requested operation."
+  "Parse the public command line and carry out the requested operation.
+
+   The runtime owns the environment that the parser reads, so the defaults a
+   command line falls back on and the client that carries the operation out
+   see the same one."
   [& argv]
-  (let [result (cli/parse (vec argv) {:env (environment) :elf-facts elf-facts})]
-    (System/exit (report! result))))
+  (let [runtime (session/runtime)
+        result (cli/parse (vec argv) {:env (:env runtime) :elf-facts elf-facts})]
+    (System/exit (report! result runtime))))
 
 (defn report!
   "Write the result of a parse and return the exit status."
-  [{:keys [action text message operation exit]}]
+  [{:keys [action text message operation exit]} runtime]
   (case action
     (:help :version) (do (binding [*out* (if (= op/exit-ok exit) *out* *err*)]
                            (println text))
                          exit)
     :error (do (binding [*out* *err*] (println (str "probetron: " message)))
                exit)
-    :run (execute! operation)))
+    :run (execute! operation runtime)))
 
 (defn execute!
   "Carry out one validated operation.
 
    A long session holds the rig target until the client lets go, and every
    short operation finishes inside one remote command."
-  [operation]
-  (let [runtime (session/runtime)]
-    (if (contains? tunnel/operations (:operation operation))
-      (tunnel/open! operation runtime)
-      (session/execute! operation runtime))))
-
-(defn environment
-  "Return the process environment as a plain map."
-  []
-  (into {} (map (fn [entry] [(key entry) (val entry)])) (System/getenv)))
+  [operation runtime]
+  (if (contains? tunnel/operations (:operation operation))
+    (tunnel/open! operation runtime)
+    (session/execute! operation runtime)))
 
 (defn elf-facts
   "Probe a local ELF path for the pure validators."

@@ -99,7 +99,7 @@
 (defn group-command
   "Return the argv that runs one owned helper as its own process group."
   [{:keys [setsid]} argv]
-  (into [setsid] (vec argv)))
+  (into [setsid] argv))
 
 (defn group-signal-command
   "Return the argv that sends one signal to one owned process group.

@@ -22,10 +22,6 @@
          default-runtime default-executables default-filesystem write-key!
          reserve-port! make-link-directory! fail! warn!)
 
-(def operations
-  "The client operations that finish inside one short remote command."
-  #{:info :status :flash :erase :reset})
-
 (def transport-failure
   "The status that SSH itself returns when it never reached the rig."
   255)
@@ -45,9 +41,9 @@
    The remote command is one quoted token list, and an ELF upload travels on
    standard input, so no client path and no second shell token ever reach the
    rig."
-  [operation key runtime streams]
+  [operation key-path runtime streams]
   (let [{:keys [executables run!]} runtime
-        argv (command/ssh-argv {:ssh (:ssh executables) :key key :host (:host operation)}
+        argv (command/ssh-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
                                (command/remote-command operation))
         result (run! argv (merge {:in (upload operation)} streams))]
     (report-transport-failure! (:host operation) (:exit result))
@@ -69,13 +65,13 @@
 
    The rig answers in the format the client asked for, so text stays readable
    and EDN keeps stable keys on both sides."
-  [operation key runtime]
-  (let [{:keys [exit out]} (invoke! operation key runtime {:out :string :err :inherit})
+  [operation key-path runtime]
+  (let [{:keys [exit out]} (invoke! operation key-path runtime {:out :string :err :inherit})
         rig (rig-information out (:format operation))]
     (if rig
       (do (println (report/render (report/information {:probetron version/probetron-version
                                                        :babashka (System/getProperty "babashka.version")
-                                                       :key key
+                                                       :key key-path
                                                        :rig rig})
                                   (:format operation)))
           exit)
@@ -125,11 +121,11 @@
 
 (def default-filesystem
   "The real filesystem behind the key cache."
-  {:exists? (fn [path] (fs/exists? path))
-   :read-bytes (fn [path] (fs/read-all-bytes path))
+  {:exists? fs/exists?
+   :read-bytes fs/read-all-bytes
    :permissions (fn [path] (fs/posix->str (fs/posix-file-permissions path)))
    :make-directory! (fn [path] (fs/create-dirs path {:posix-file-permissions "rwx------"}))
-   :write-key! (fn [path bytes] (write-key! path bytes))})
+   :write-key! #'write-key!})
 
 (def default-runtime
   "The production wiring of the key endpoint, the filesystem, and subprocesses."
@@ -137,11 +133,11 @@
    :filesystem default-filesystem
    :fetch! rig-key/http-fetch!
    :which (fn [program] (some-> (fs/which program) str))
-   :reserve-port! (fn [] (reserve-port!))
-   :make-link-directory! (fn [base] (make-link-directory! base))
-   :delete-link-directory! (fn [path] (fs/delete-tree path))
+   :reserve-port! #'reserve-port!
+   :make-link-directory! #'make-link-directory!
+   :delete-link-directory! fs/delete-tree
    :run! (fn [argv opts] @(process/process argv (merge {:throw false} opts)))
-   :spawn! (fn [argv opts] (process/process argv opts))})
+   :spawn! process/process})
 
 (defn reserve-port!
   "Return a free ephemeral port on the client loopback.
@@ -160,16 +156,16 @@
 
 (defn write-key!
   "Write one private key through a temporary neighbour that only the client may read."
-  [path bytes]
+  [path content]
   (let [temporary (str path ".new")]
-    (fs/write-bytes temporary bytes)
+    (fs/write-bytes temporary content)
     (fs/set-posix-file-permissions temporary rig-key/safe-mode)
     (fs/move temporary path {:replace-existing true :atomic-move true})))
 
 (defn environment
   "Return the process environment as a plain map."
   []
-  (into {} (map (fn [entry] [(key entry) (val entry)])) (System/getenv)))
+  (into {} (System/getenv)))
 
 (defn fail!
   "Report why the client refuses to run an operation and return the failure status."

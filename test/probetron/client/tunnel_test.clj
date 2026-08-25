@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [probetron.client.tunnel-fixture :as fixture]
+            [probetron.stand-in :as stand-in]
             [probetron.operation :as op])
   (:import (java.util.concurrent TimeUnit)))
 
@@ -96,10 +97,10 @@
 (deftest a-lost-pseudo-terminal-leaves-the-session-alone
   (with-session! (assoc uart-connect :pty? true) {}
     (fn [{:keys [client err result]}]
-      (fixture/signal! "-KILL" (fixture/await-pid! client "socat"))
+      (stand-in/signal! "-KILL" (fixture/await-pid! client "socat"))
       (is (str/includes? (fixture/await-output! err "pseudo-terminal") "stays usable")
           "the client says that only the presentation is gone")
-      (is (fixture/alive? (fixture/recorded-pid client "ssh"))
+      (is (stand-in/alive? (fixture/recorded-pid client "ssh"))
           "the outer command keeps the target")
       (is (= :pending (deref result 100 :pending))))))
 
@@ -130,11 +131,11 @@
             pids (into {} (map (fn [name] [name (fixture/await-pid! client name)]))
                        fixture/programs)]
         (is (every? some? (vals pids)) "the session runs both helpers before the signal arrives")
-        (fixture/signal! "-TERM" (.pid (:proc session)))
+        (stand-in/signal! "-TERM" (.pid (:proc session)))
         (is (.waitFor ^Process (:proc session) 15000 TimeUnit/MILLISECONDS)
             "a handled signal must end the client")
         (doseq [[name pid] pids]
-          (is (not (fixture/alive? pid)) (str "cleanup must stop " name)))
+          (is (not (stand-in/alive? pid)) (str "cleanup must stop " name)))
         (is (empty? (fs/list-dir (fixture/path client "run")))
             "cleanup must remove the private link directory"))
       (finally

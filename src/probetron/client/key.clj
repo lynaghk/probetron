@@ -54,7 +54,7 @@
 
    Unchanged bytes leave the cache file alone, and changed bytes arrive through
    a temporary neighbour, so SSH never reads half a key."
-  [path bytes {:keys [exists? read-bytes permissions make-directory! write-key!]}]
+  [path content {:keys [exists? read-bytes permissions make-directory! write-key!]}]
   (try
     (make-directory! (str (fs/parent path)))
     (let [mode (when (exists? path) (permissions path))]
@@ -63,11 +63,11 @@
         (failure (str "the cached rig key " path " has unsafe permissions " mode
                       ": remove it or run chmod 600 " path))
 
-        (and mode (java.util.Arrays/equals ^bytes bytes ^bytes (read-bytes path)))
+        (and mode (java.util.Arrays/equals ^bytes content ^bytes (read-bytes path)))
         {:path path}
 
         :else
-        (do (write-key! path bytes) {:path path})))
+        (do (write-key! path content) {:path path})))
     (catch Exception exception
       (failure (str "cannot store the rig key in " path ": "
                     (or (ex-message exception) (str exception)))))))

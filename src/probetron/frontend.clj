@@ -1,0 +1,87 @@
+(ns probetron.frontend
+  "Pure command-line front end that the public client and the rig entry point share.
+
+   A front end is
+   {:program \"probetron\" :help-text fn :command-specs map :command-usage map
+    :build fn :use-env? bool :refused fn},
+   and every Probetron command line reaches its operation through the same
+   dispatch, so a new command or a changed option is one edit rather than two.
+   Nothing here touches the filesystem, the network, or the hardware."
+  (:require [clojure.string :as str]
+            [probetron.operation :as op]
+            [probetron.version :as version]))
+
+(declare command-help parse-command option-message)
+
+(def commands
+  "The commands that both front ends carry, in help order."
+  [:info :status :flash :erase :reset :connect :debug])
+
+(def command-names
+  "The command names as a command line types them."
+  (into {} (map (juxt name identity)) commands))
+
+(def value-option {:coerce :string})
+(def flag-option {:coerce :boolean})
+
+(defn parse
+  "Turn one argv into an action map for one front end.
+
+   Return {:action :run :operation operation}, {:action :help :text text :exit status},
+   {:action :version :text text :exit status}, or {:action :error :message text :exit status}."
+  [{:keys [program help-text] :as front-end} argv context]
+  (let [[head & remaining] argv]
+    (cond
+      (nil? head)
+      {:action :help :text (help-text) :exit op/exit-usage}
+
+      (#{"--help" "-h" "help"} head)
+      {:action :help :text (help-text) :exit op/exit-ok}
+
+      (#{"--version" "-V" "version"} head)
+      {:action :version :text (str program " " version/probetron-version) :exit op/exit-ok}
+
+      :else
+      (if-let [command (command-names head)]
+        (if (some #{"--help" "-h"} remaining)
+          {:action :help :text (command-help front-end command) :exit op/exit-ok}
+          (parse-command front-end command (vec remaining) context))
+        {:action :error
+         :message (str "unknown command " (pr-str head) ": run " program " --help")
+         :exit op/exit-usage}))))
+
+(defn usage-lines
+  "Return one usage line for every command of one front end."
+  [{:keys [command-usage]}]
+  (map command-usage commands))
+
+(defn command-help
+  "Return the help of one command."
+  [{:keys [command-usage]} command]
+  (str/join "\n" ["Usage:" (command-usage command)]))
+
+(defn parse-command
+  "Parse the options of one command and build its operation."
+  [{:keys [command-specs build use-env?] :as front-end} command argv context]
+  (let [{:keys [opts args option-error]} (op/parse-options argv (command-specs command))]
+    (if option-error
+      {:action :error :message (option-message front-end command option-error) :exit op/exit-usage}
+      (let [{:keys [operation errors]} (build command (assoc context
+                                                             :opts opts
+                                                             :args args
+                                                             :use-env? use-env?))]
+        (if errors
+          {:action :error :message (str/join "\n" errors) :exit op/exit-usage}
+          {:action :run :operation operation})))))
+
+(defn option-message
+  "Explain an option that a front end refused.
+
+   A front end that refuses one option for a reason of its own supplies
+   :refused, and every other unknown option names the help of its command."
+  [{:keys [program refused]} command {:keys [option cause message]}]
+  (if (= :restrict cause)
+    (or (when refused (refused option))
+        (str "unknown option --" (name option) " for " program " " (name command)
+             ": run " program " " (name command) " --help"))
+    message))

@@ -4,6 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [probetron.operation :as operation]
+            [probetron.provisioning.archive :as archive]
             [probetron.provisioning.package :as package]
             [probetron.version :as version]))
 
@@ -37,7 +38,7 @@
         (testing "two runs over the same sources write the same bytes"
           (is (= (:sha256 first-run) (:sha256 second-run)))
           (is (= (:sha256 first-run)
-                 (package/archive-digest (:archive first-run)))))
+                 (archive/sha-256-hex (fs/read-all-bytes (:archive first-run))))))
         (testing "the checksum file is what sha256sum reads"
           (is (= (str (:sha256 first-run) "  probetron-" version/probetron-version ".tar.gz\n")
                  (slurp (:checksum first-run)))))

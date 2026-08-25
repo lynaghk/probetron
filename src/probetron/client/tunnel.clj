@@ -43,11 +43,11 @@
    The endpoint appears as soon as SSH starts, so a host program has somewhere
    to go while the forward and the rig target are still opening, and a
    forward that never appeared ends the whole session."
-  [operation key runtime]
+  [operation key-path runtime]
   (let [port (session-port operation runtime)
         state (atom {:cleaned? false})]
     (try
-      (let [ssh (start-ssh! operation key port runtime)]
+      (let [ssh (start-ssh! operation key-path port runtime)]
         (swap! state assoc :ssh ssh)
         (register-cleanup! state runtime)
         (println (command/service-endpoint port))
@@ -62,8 +62,8 @@
    Both rig streams stay attached to the client, so probe-rs diagnostics and
    decoded RTT text reach the operator unchanged, while an optional RTT ELF
    travels the other way on standard input."
-  [operation key port {:keys [executables spawn!]}]
-  (spawn! (command/session-argv {:ssh (:ssh executables) :key key :host (:host operation)}
+  [operation key-path port {:keys [executables spawn!]}]
+  (spawn! (command/session-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
                                 port
                                 (rig-port operation)
                                 (command/remote-command operation))
@@ -136,7 +136,7 @@
    removes the rig listeners and gives the target lock back, and the client
    itself never touches the DUT."
   [state {:keys [delete-link-directory!]}]
-  (let [[before _] (swap-vals! state assoc :cleaned? true)]
+  (let [[before] (swap-vals! state assoc :cleaned? true)]
     (when-not (:cleaned? before)
       (stop-process! (:pty before))
       (when-let [directory (:pty-directory before)] (delete-link-directory! directory))

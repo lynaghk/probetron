@@ -161,6 +161,6 @@
 
 (defn private-key?
   "Tell whether fetched bytes carry the framing of one private key."
-  [bytes]
+  [content]
   (boolean (re-find #"(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*-----END [A-Z0-9 ]*PRIVATE KEY-----"
-                    (String. ^bytes bytes "UTF-8"))))
+                    (String. ^bytes content "UTF-8"))))

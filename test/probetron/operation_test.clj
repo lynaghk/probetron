@@ -82,10 +82,11 @@
       (is (= (:operation public) (:operation (:operation result)))))))
 
 (deftest elf-bearing-operations
-  (is (true? (operation/stdin-elf? flash-operation)))
-  (is (true? (operation/stdin-elf? (assoc connect-operation :rtt {:elf "a.elf" :chip "RP2350" :speed-khz 1000}))))
-  (is (false? (operation/stdin-elf? connect-operation)))
-  (is (false? (operation/stdin-elf? {:operation :erase :host "pi" :chip "RP2350" :speed-khz 1000}))))
+  (is (= "firmware.elf" (operation/stdin-elf flash-operation)))
+  (is (= "a.elf" (operation/stdin-elf (assoc connect-operation
+                                             :rtt {:elf "a.elf" :chip "RP2350" :speed-khz 1000}))))
+  (is (nil? (operation/stdin-elf connect-operation)))
+  (is (nil? (operation/stdin-elf {:operation :erase :host "pi" :chip "RP2350" :speed-khz 1000}))))
 
 (deftest elf-header-recognition
   (is (true? (operation/elf-header? [0x7f 0x45 0x4c 0x46 0x02])))

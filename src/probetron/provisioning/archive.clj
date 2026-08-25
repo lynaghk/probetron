@@ -1,7 +1,7 @@
 (ns probetron.provisioning.archive
   "Pure encoder that turns archive members into deterministic tar and gzip bytes.
 
-   A member is {:path \"bin/probetron\" :kind :file :mode 0755 :bytes bytes} or
+   A member is {:path \"bin/probetron\" :kind :file :mode 0755 :content bytes} or
    {:path \"bin/\" :kind :directory :mode 0755}.
    Every field that an ordinary archiver takes from the machine or the clock is
    fixed here, so the same members always encode to the same bytes."
@@ -9,7 +9,7 @@
            [java.security MessageDigest]
            [java.util.zip GZIPOutputStream]))
 
-(declare header member-size checksum checksum-field octal write-text! zeros round-up)
+(declare hex header member-size checksum checksum-field octal write-text! zeros round-up)
 
 (def block-size
   "The size of one tar block."
@@ -40,7 +40,7 @@
   (let [out (ByteArrayOutputStream.)]
     (doseq [member members]
       (.write out ^bytes (header member))
-      (when-let [content (:bytes member)]
+      (when-let [content (:content member)]
         (.write out ^bytes content)
         (.write out ^bytes (zeros (- (round-up (alength ^bytes content) block-size)
                                      (alength ^bytes content))))))
@@ -62,9 +62,12 @@
 (defn sha-256-hex
   "Return the lowercase hexadecimal SHA-256 digest of bytes."
   [^bytes data]
-  (->> (.digest (MessageDigest/getInstance "SHA-256") data)
-       (map #(format "%02x" (bit-and % 0xff)))
-       (apply str)))
+  (hex (.digest (MessageDigest/getInstance "SHA-256") data)))
+
+(defn hex
+  "Return the lowercase hexadecimal form of a digest."
+  [^bytes digest]
+  (apply str (map #(format "%02x" (bit-and % 0xff)) digest)))
 
 (defn header
   "Return the 512-byte USTAR header block of one member."
@@ -85,8 +88,8 @@
 
 (defn member-size
   "Return the payload size that the header of one member declares."
-  [{:keys [kind bytes]}]
-  (if (= :directory kind) 0 (alength ^bytes bytes)))
+  [{:keys [kind content]}]
+  (if (= :directory kind) 0 (alength ^bytes content)))
 
 (defn checksum
   "Sum the unsigned bytes of a header block whose checksum field holds spaces."
