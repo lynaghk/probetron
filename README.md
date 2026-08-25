@@ -642,6 +642,10 @@ Raspberry Pi Imager also writes the file, with customisation turned off, because
 
 ### First boot
 
+The rig names root and the boot filesystem by slot, and rpi-image-gen fills those slots from what the bootloader of the Pi publishes about the device it booted from.
+Firmware old enough to publish neither leaves both slots empty, and a rig whose root device never appears waits in its initramfs with nothing to say: the activity LED blinks, the Ethernet LEDs light from the bootloader alone, and no network, no console, and no report ever arrive.
+The image therefore fills the same two slots from the partition labels as well, so no rig depends on the age of the firmware on the board it happens to run on.
+
 Put the card in the Pi, connect the wired LAN, connect the DUT, and power up.
 The rig asks for no APT repository, no DNS name, and no time server at first boot or later, so it comes up on a lab LAN with no route to the internet.
 There is no setup wizard and no first-boot expansion: `probetron info --host <host>` is the whole acceptance check.
@@ -696,7 +700,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 
 ### The image
 
-`image/config/probetron.yaml` selects the Raspberry Pi 4 device, the `image-rpios` layout, and six named layers, and each layer owns exactly one runtime invariant.
+`image/config/probetron.yaml` selects the Raspberry Pi 4 device, the `image-rpios` layout, and seven named layers, and each layer owns exactly one runtime invariant.
 
 | Layer                 | Runtime invariant                                                                                                                                                      |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -706,6 +710,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 | `probetron-immutable` | The rig stores nothing: read-only root and boot, sized tmpfs for every writable path, and a journal that dies with its boot.                                           |
 | `probetron-offline`   | The rig asks the internet for nothing: no package timer, no time synchronisation, no radio, and no multicast discovery.                                                |
 | `probetron-console`   | The rig answers whatever the lab network does: the USB-C receptacle in peripheral mode, one Ethernet gadget, a fixed address, a DHCP server for the client, and a report of every boot on the card. |
+| `probetron-boot`      | The rig boots on any Raspberry Pi 4: the by-slot names of root and the boot filesystem come from the partition labels as well as from the bootloader.                    |
 
 | Volatile path    | Bound                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------ |
@@ -875,7 +880,7 @@ A release archive carries every source file except `provisioning/`, because a cl
 | `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                    |
 | `image/pins.edn`                         | every pinned revision, archive, and digest of the rig image        |
 | `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance               |
-| `image/layer/`                           | the six named appliance layers and their `.rootfs-overlay/` trees  |
+| `image/layer/`                           | the seven named appliance layers and their `.rootfs-overlay/` trees |
 | `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                |
 | `VERSION`                                | the release version, which `probetron.version` repeats             |
 

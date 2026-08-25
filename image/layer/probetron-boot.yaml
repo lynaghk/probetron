@@ -1,0 +1,21 @@
+# METABEGIN
+# X-Env-Layer-Name: probetron-boot
+# X-Env-Layer-Category: probetron
+# X-Env-Layer-Desc: The rig boots on any Raspberry Pi 4. Fills the by-slot
+#  names of root and the boot filesystem from the partition labels as well as
+#  from the bootloader, in the initramfs and in the running system, so
+#  firmware that publishes no boot device still finds the card it booted from.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: probetron-runtime,rpi-storage-binder
+# X-Env-Layer-RequiresProvider: probetron-appliance
+# METAEND
+---
+mmdebstrap:
+  customize-hooks:
+    # initramfs-tools carries every rule of /etc/udev/rules.d into the
+    # initramfs, and the initramfs is built after this layer writes the rule,
+    # so the fallback reaches the one place that has to resolve root.
+    - |-
+      set -eu
+      test -f "$1/etc/udev/rules.d/62-probetron-boot-slot.rules" ||
+        { echo "probetron-boot: the slot fallback rule is missing from the overlay" >&2 ; exit 1 ; }

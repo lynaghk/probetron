@@ -47,3 +47,4 @@ layer:
   immutable: probetron-immutable
   offline: probetron-offline
   console: probetron-console
+  boot: probetron-boot

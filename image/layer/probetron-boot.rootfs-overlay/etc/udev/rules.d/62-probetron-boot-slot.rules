@@ -1,0 +1,18 @@
+# The rig finds its own filesystems whatever the bootloader says about them.
+#
+# rpi-image-gen names root and the boot filesystem by slot, and it fills those
+# slots from /proc/device-tree/chosen/bootloader, which the bootloader of the
+# Pi publishes. Firmware old enough to publish neither boot-mode nor partition
+# leaves both slots empty, and a rig whose root device never appears waits in
+# its initramfs forever: no console, no network, and no report.
+#
+# The partition labels answer the same question and no firmware is involved,
+# so these two rules fill the same slots from the card itself. Both mechanisms
+# name one device each, and udev takes the same symlink from either.
+#
+# The rig boots from its SD card alone, so the match stays on that card: no
+# removable device carrying a partition labelled ROOT can become the root
+# filesystem of a rig.
+
+SUBSYSTEM=="block", KERNEL=="mmcblk0p*", ENV{ID_FS_LABEL}=="BOOT", SYMLINK+="disk/by-slot/boot"
+SUBSYSTEM=="block", KERNEL=="mmcblk0p*", ENV{ID_FS_LABEL}=="ROOT", SYMLINK+="disk/by-slot/system"
