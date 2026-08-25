@@ -15,6 +15,7 @@
 (def exit-ok 0)
 (def exit-failure 1)
 (def exit-usage 64)
+(def exit-unavailable 69)
 (def exit-busy 75)
 
 ;; Defaults and bounds of the target-specific values.

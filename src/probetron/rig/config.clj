@@ -4,11 +4,14 @@
    The rig takes no client-only option, reads no client environment default,
    and receives every ELF file over standard input."
   (:require [clojure.string :as str]
+            [probetron.rig.lifecycle :as lifecycle]
             [probetron.operation :as op]
             [probetron.version :as version]))
 
 (declare help-text command-help command-names command-specs command-usage
-         parse-command build option-message client-only-options program-name)
+         parse-command build option-message client-only-options)
+
+(def program-name lifecycle/program-name)
 
 (defn parse
   "Turn a rig argv into an action map.
@@ -35,8 +38,6 @@
         {:action :error
          :message (str "unknown command " (pr-str head) ": run " program-name " --help")
          :exit op/exit-usage}))))
-
-(def program-name "probetron-rig")
 
 (defn parse-command
   "Parse the options of one rig command and build its operation."
