@@ -188,7 +188,24 @@ Reading `journalctl` there is the only post-mortem a rig has, because the journa
 
 The cable carries power as well as data.
 A laptop port that holds up a Raspberry Pi 4 runs the rig on its own, and a port that browns out asks for 5 V on header pins 2 and 6 from the ordinary supply, with the USB-C cable left for data.
+A cable that carries power alone reaches nothing, which looks exactly like a rig that never booted.
 The four USB-A receptacles belong to another controller, so the DUT keeps its own cable and its own rules throughout.
+
+### The report of every boot
+
+A rig that answers on neither the LAN nor the console has one thing left to say, and it says it on the card.
+`probetron-report.service` writes `probetron-report.txt` to the boot filesystem half a minute into every boot and again at every shutdown: the units that failed, every link and its addresses, whether a USB device controller exists at all, the kernel messages about the link and the gadget, and the journal of that boot.
+
+Power the rig, wait a minute, power it down, and read that file from the card on any machine, because the boot filesystem is FAT and every laptop mounts it.
+
+```text
+probetron report: boot
+2026-08-25T18:41:02+00:00
+Linux probetron 6.18.39+rpt-rpi-v8 ...
+```
+
+An absent report is itself the answer: the rig never reached userspace, and the fault is the card, the power, or the firmware rather than anything above them.
+This is the one thing a rig ever writes to persistent storage, and it arrives through a temporary neighbour and one rename, so a power loss during the write keeps the report of the boot before it.
 
 ## Install the client
 
@@ -688,7 +705,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 | `probetron-hardware`  | The one DUT slot exists and belongs to nobody else: SPI0, UART0 on GPIO14 and GPIO15 with no console, GPIO26 free, and udev rules that reserve every target device.    |
 | `probetron-immutable` | The rig stores nothing: read-only root and boot, sized tmpfs for every writable path, and a journal that dies with its boot.                                           |
 | `probetron-offline`   | The rig asks the internet for nothing: no package timer, no time synchronisation, no radio, and no multicast discovery.                                                |
-| `probetron-console`   | The rig answers on one cable whatever the lab network does: the USB-C receptacle in peripheral mode, one Ethernet gadget, a fixed address, and a DHCP server for the client. |
+| `probetron-console`   | The rig answers whatever the lab network does: the USB-C receptacle in peripheral mode, one Ethernet gadget, a fixed address, a DHCP server for the client, and a report of every boot on the card. |
 
 | Volatile path    | Bound                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------ |
@@ -756,6 +773,7 @@ The recovery from all of them is the same: reboot the rig, and the volatile lock
 | `the SSH connection to <host> failed` (status 255)               | the address, the LAN, or a rig that has not booted                                                      | confirm the address, retry after boot, and download the key again in case the rig was reflashed                                                                          |
 | the rig takes no address and answers nothing on the LAN           | the DHCP server was not up, leases only known hardware, or the link is dead                             | plug one USB-C cable into the rig and run `probetron shell --usb`, then read `networkctl status eth0` and `journalctl -b -u systemd-networkd` there                      |
 | the USB console itself never appears                             | the receptacle carries power alone, the port browns out, or the rig never reached userspace              | check that the cable carries data, feed 5 V into header pins 2 and 6 instead, and treat a silent gadget as a rig that is not booting                                     |
+| neither the LAN nor the USB console answers                       | the rig is not reaching userspace, or it flashed an image without the console layer                     | read `probetron-report.txt` on the card; an absent report means the boot stopped below userspace, and `config.txt` there must end with `dtoverlay=dwc2,dr_mode=peripheral` |
 | the endpoint prints but nothing connects                         | the forward never came up, or nothing listens behind it                                                 | the session ends by itself when the forward fails; otherwise check `--local-port` for a port already in use on the client                                                |
 | `the rig is busy with <command> (pid ...) since ...` (status 75) | another operation owns the target                                                                       | run `probetron status`, wait for that operation, or end it on the client that started it                                                                                 |
 | status 69 with a named missing resource                          | the rig image or the wiring lacks that resource                                                         | follow the repair in the diagnostic; every one of them names the resource and the fix                                                                                    |

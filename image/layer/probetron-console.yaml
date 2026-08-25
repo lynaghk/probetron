@@ -2,9 +2,9 @@
 # X-Env-Layer-Name: probetron-console
 # X-Env-Layer-Category: probetron
 # X-Env-Layer-Desc: The out-of-band console. Puts the USB-C receptacle in
-#  peripheral mode, presents one USB Ethernet gadget, and gives that link a
-#  fixed address and a DHCP server of its own, so a client reaches a rig that
-#  the lab network cannot see.
+#  peripheral mode, presents one USB Ethernet gadget, gives that link a fixed
+#  address and a DHCP server of its own, and leaves a report of every boot on
+#  the boot filesystem, so a rig that the lab network cannot see still answers.
 # X-Env-Layer-Version: 1.0.0
 # X-Env-Layer-Requires: probetron-runtime,rpi-boot-firmware
 # X-Env-Layer-RequiresProvider: probetron-appliance
@@ -24,3 +24,6 @@ mmdebstrap:
       [all]
       dtoverlay=dwc2,dr_mode=peripheral
       EOCONFIG
+    # The one thing a rig writes to persistent storage, and the only report
+    # that survives a rig which answers on no network at all.
+    - systemctl --root="$1" enable probetron-report.service

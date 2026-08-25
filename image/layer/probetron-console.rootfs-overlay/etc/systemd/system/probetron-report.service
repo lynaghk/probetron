@@ -1,0 +1,18 @@
+[Unit]
+Description=Probetron boot report on the boot filesystem
+Documentation=file:/usr/local/README.md
+Requires=boot-firmware.mount
+After=boot-firmware.mount network.target systemd-networkd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The report answers what a boot settled into, so it waits for the DHCP client
+# to have tried and for the console gadget to have bound or failed.
+ExecStartPre=-/bin/sleep 30
+ExecStart=/usr/local/libexec/probetron-report boot
+ExecStop=/usr/local/libexec/probetron-report shutdown
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

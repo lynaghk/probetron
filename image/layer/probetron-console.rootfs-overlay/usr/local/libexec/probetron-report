@@ -1,0 +1,52 @@
+#!/bin/sh
+# Write one report of this boot to the boot filesystem.
+#
+# The journal of a rig lives in memory and dies with its boot, and a rig that
+# reaches neither the lab network nor the USB console answers no question at
+# all. The boot filesystem is the one place that survives both: it is FAT, so
+# every laptop reads it from the card with no tools whatever.
+#
+# The report arrives through a temporary neighbour and one rename, so a power
+# loss during the write leaves the report of the previous boot whole.
+set -u
+
+directory=/boot/firmware
+target="$directory/probetron-report.txt"
+temporary="$directory/probetron-report.new"
+
+test -w "$directory" || exit 0
+
+{
+   echo "probetron report: ${1:-boot}"
+   date -Is
+   uname -a
+   echo
+
+   echo "--- units that failed"
+   systemctl --failed --no-pager --no-legend
+
+   echo
+   echo "--- links"
+   networkctl --no-pager
+   for link in eth0 usb0 ; do
+      echo
+      networkctl status --no-pager "$link" 2>&1
+   done
+
+   echo
+   echo "--- usb device controllers, which the console gadget needs"
+   ls /sys/class/udc 2>&1
+
+   echo
+   echo "--- kernel messages about the link and the gadget"
+   journalctl -b -k --no-pager 2>/dev/null |
+      grep -iE 'dwc2|udc|gadget|g_ether|genet|eth0|usb0' | tail -n 60
+
+   echo
+   echo "--- the whole journal of this boot, newest last"
+   journalctl -b --no-pager 2>/dev/null | tail -n 400
+} > "$temporary" 2>&1
+
+sync
+mv "$temporary" "$target"
+sync
