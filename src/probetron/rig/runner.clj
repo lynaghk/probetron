@@ -10,12 +10,13 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.edn :as edn]
+            [probetron.rig.hardware :as hardware]
             [probetron.rig.lifecycle :as lifecycle]
             [probetron.operation :as op])
   (:import (java.io InputStream IOException OutputStream)
            (java.util.concurrent TimeUnit)))
 
-(declare default-runtime default-paths default-executables default-filesystem
+(declare default-runtime default-paths default-executables default-filesystem default-hardware
          own-target! report-status! probe-lock acquire-lock! handshake! release-lock!
          register-cleanup! session start-helper! clean-up! stop-groups! signal-group! await-exit!
          run-reset! write-active! read-owner! delete-active! write-atomically!
@@ -231,12 +232,17 @@
    (-> (merge default-runtime overrides)
        (assoc :paths (merge default-paths (:paths overrides)))
        (assoc :executables (merge default-executables (:executables overrides)))
-       (assoc :filesystem (merge default-filesystem (:filesystem overrides))))))
+       (assoc :filesystem (merge default-filesystem (:filesystem overrides)))
+       (assoc :hardware (merge default-hardware (:hardware overrides))))))
 
 (def default-paths
-  "The volatile state of the appliance, which the rig recreates at every boot."
+  "Every fixed rig path: the volatile state of one operation and the identity of the image."
   {:lock "/run/probetron/target.lock"
-   :active "/run/probetron/active.edn"})
+   :active "/run/probetron/active.edn"
+   :uploads hardware/upload-directory
+   :os-release "/etc/os-release"
+   :hostname "/etc/hostname"
+   :machine-id "/etc/machine-id"})
 
 (def default-executables
   "Every appliance executable that the shell runs, by absolute path."
@@ -244,11 +250,19 @@
    :setsid "/usr/bin/setsid"
    :kill "/bin/kill"
    :cat "/bin/cat"
-   :noop "/bin/true"})
+   :noop "/bin/true"
+   :probe-rs hardware/probe-rs-executable
+   :gpioset hardware/gpioset-executable
+   :socat hardware/socat-executable})
+
+(def default-hardware
+  "The fixed target slot that every hardware command addresses."
+  hardware/defaults)
 
 (def default-filesystem
   "The real filesystem behind the runtime."
   {:directory? (fn [path] (fs/directory? path))
+   :exists? (fn [path] (fs/exists? path))
    :read-file (fn [path] (when (fs/exists? path) (slurp (fs/file path))))
    :write-file! (fn [path text] (write-atomically! path text))
    :delete-file! (fn [path] (fs/delete-if-exists path))})
@@ -258,9 +272,13 @@
   {:paths default-paths
    :executables default-executables
    :filesystem default-filesystem
+   :hardware default-hardware
    :clock (fn [] (java.time.Instant/now))
    :pid (fn [] (.pid (java.lang.ProcessHandle/current)))
-   :spawn! (fn [argv opts] (process/process argv opts))})
+   :stdin (fn [] System/in)
+   :spawn! (fn [argv opts] (process/process argv opts))
+   :run! (fn [argv opts]
+           @(process/process argv (merge {:out :inherit :err :inherit :throw false} opts)))})
 
 (defn write-atomically!
   "Write a file through a temporary neighbour, so a reader never sees half a record."

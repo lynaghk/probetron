@@ -29,7 +29,7 @@
 (def max-usb-wait-seconds 60)
 (def min-local-port 1024)
 (def max-local-port 65535)
-(def max-elf-bytes (* 32 1024 1024))
+(def max-elf-bytes (* 64 1024 1024))
 
 (def channels [:usb :uart])
 (def formats [:text :edn])

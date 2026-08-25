@@ -4,9 +4,10 @@
   (:require [probetron.rig.config :as rig]
             [probetron.rig.lifecycle :as lifecycle]
             [probetron.rig.runner :as runner]
+            [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
-(declare report! perform! reset-target!)
+(declare report! perform! unsupported! reset-target!)
 
 (defn -main
   "Parse the rig command line and carry out the requested operation."
@@ -27,21 +28,25 @@
                                                      :reset-target! reset-target!}))))
 
 (defn perform!
-  "Carry out one operation that already owns the target.
+  "Carry out one operation that already owns the target."
+  [operation session]
+  (if (contains? target/operations (:operation operation))
+    (target/perform! operation session)
+    (unsupported! operation)))
 
-   This rig has no hardware backend, so it reports the operation it holds the
-   target for and gives the target back."
-  [operation _session]
-  (runner/warn! (str "this rig has no hardware backend, so "
+(defn unsupported!
+  "Report a long session that this rig cannot open yet.
+
+   The byte, RTT, and DAP sessions still have no backend, so the rig names the
+   operation it holds the target for and gives the target back."
+  [operation]
+  (runner/warn! (str "this rig has no session backend, so "
                      (name (:operation operation)) " cannot run"))
   (runner/warn! (str "the operation parsed as " (pr-str operation)))
   (when (op/stdin-elf? operation)
     (runner/warn! "the operation expects one ELF file on standard input"))
   op/exit-failure)
 
-(defn reset-target!
-  "Pulse the reset line of the target after a session that asked for it.
-
-   This rig has no reset backend, so it says that the target keeps its state."
-  [_runtime]
-  (runner/warn! "this rig has no reset backend, so --reset-on-exit left the target alone"))
+(def reset-target!
+  "Pulse the RUN line of the target after a session that asked for it."
+  target/pulse-reset!)
