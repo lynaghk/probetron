@@ -23,7 +23,7 @@ One path from nothing to firmware output, with a Pico 2 W as the DUT and a rig t
 Each step names the section that explains it.
 
 **1. Build the image and write the card.**
-This step alone wants a Debian 13 `aarch64` host with root and roughly 10 GB free.
+This step alone wants a Debian 13 `aarch64` host with root and 10 GiB free in `/var/tmp`.
 See [Build the rig image](#build-the-rig-image).
 
 ```sh
@@ -533,7 +533,7 @@ Building its image is a deliberate bench operation on one kind of host.
 | root, or `podman` for an ordinary account                            | the build creates a chroot and mounts pseudo-filesystems in a private mount namespace                                      |
 | `git`, `curl`, `tar`, `xz-utils`, `dpkg-dev`, `openssh-client`       | fetching pinned inputs, unpacking them, generating the keypair, and publishing the image                                   |
 | rpi-image-gen build dependencies                                     | `bb image --validate-only` fetches the pinned checkout, and `.cache/rpi-image-gen/install_deps.sh` then installs them once |
-| roughly 10 GB of free disk and a network path to the pinned archives | the base snapshot, the two pinned binaries, and the raw image                                                              |
+| 10 GiB of free space in `/var/tmp` and a network path to the pinned archives | the chroot, the package cache, and the raw image, which the build writes under `/var/tmp/probetron-work` |
 
 ```sh
 bb image
@@ -545,6 +545,10 @@ image: build/probetron-rpi4.img.xz
 checksum: build/probetron-rpi4.img.xz.sha256
 sha256: <64 hexadecimal digits>
 ```
+
+The build does every scratch step in `/var/tmp/probetron-work`, which `TMPDIR` moves, because a chroot carries device nodes and files that only root may open, and a project directory on a network share or a virtual-machine share grants neither.
+It checks that directory for 10 GiB of free space before it fetches anything, so a filesystem too small for one image stops the build in a second rather than an hour.
+That directory is also the package cache of every later build, so removing it costs the next build a fresh download and nothing else.
 
 Both outputs arrive through a temporary neighbour and one rename each, so an interrupted build replaces neither a valid image nor a valid checksum.
 `bb image --validate-only` stops as soon as rpi-image-gen has accepted the configuration and resolved every layer, which is the whole check that a checkout without build dependencies, privilege, or a spare hour can run.

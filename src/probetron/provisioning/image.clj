@@ -19,7 +19,8 @@
             [probetron.version :as version]))
 
 (declare usage build! validate! checked-pins! read-pins! check-host! check-glibc! checkout!
-         report-topology! require-privilege! stage! generate-image! publish! report
+         report-topology! require-privilege! prepare-work! temporary-directory work-directory
+         space-state gibibytes stage! generate-image! publish! report
          layer-files pipeline-layers canonical-env overrides ig-program dependency-state
          install-hint install-command
          capture! stream! download! extract! sha-256-file os-release environment-file
@@ -58,8 +59,19 @@
   "build")
 
 (def cache-directory
-  "Where the pinned checkout, the fetched archives, and the build work live."
+  "Where the pinned checkout and the fetched archives live."
   ".cache")
+
+(def scratch-name
+  "The one directory of the system temporary directory that a build works in."
+  "probetron-work")
+
+(def required-space
+  "How much free space one build needs where it does that work.
+
+   The chroot, the package cache, and the raw image are the whole of it, and
+   ten gibibytes covers every image that this configuration can produce."
+  (* 10 1024 1024 1024))
 
 (def validation-message
   "What a valid configuration prints, and the whole output of --validate-only."
@@ -72,7 +84,7 @@
         parsed (op/parse-options argv {:validate-only {:coerce :boolean}})
         {:keys [option-error opts args]} parsed]
     (cond
-      (some #{"--help" "-h"} argv) (do (println usage) op/exit-ok)
+      (some #{"--help" "-h"} argv) (do (println (usage)) op/exit-ok)
       option-error (fatal (:message option-error) op/exit-usage)
       :else (try
               (build! {:validate-only (:validate-only opts) :overrides args})
@@ -91,12 +103,15 @@
       (do
         (report-topology! pins)
         (require-privilege!)
-        (let [staged (stage! pins)
-              raw (generate-image! pins checkout staged overrides)]
+        (let [work (prepare-work!)
+              staged (stage! pins)
+              raw (generate-image! pins checkout staged work overrides)]
           (println (report (publish! pins raw)))
           op/exit-ok)))))
 
-(def usage
+(defn usage
+  "Return what a command line may say, one line to a line."
+  []
   (str/join
    \newline
    ["Usage: bb image [--validate-only] [key=value ...]"
@@ -107,6 +122,8 @@
     "  key=value        One rpi-image-gen variable override, passed through."
     ""
     (str "Every pinned input lives in " pins-file ".")
+    (str "The build works in " (work-directory (temporary-directory)) ", which TMPDIR moves,"
+         " and needs " (gibibytes required-space) " of free space there.")
     (str "A finished build writes the compressed image and its checksum under " build-directory "/.")]))
 
 ;;; Pins
@@ -296,6 +313,45 @@
       (fail! (str "the image build needs a private mount namespace: install podman, or run"
                   " the build as root")))))
 
+(defn prepare-work!
+  "Return the scratch directory of the build, and fail unless it has room.
+
+   The chroot carries device nodes and files that only root may open, and the
+   project directory may sit on a share that grants neither, so every build
+   works in the system temporary directory rather than in the checkout."
+  []
+  (let [temporary (temporary-directory)
+        free (.getUsableSpace (fs/file temporary))]
+    (when (= :short (space-state free))
+      (fail! (str "the image build needs " (gibibytes required-space) " of free space in " temporary
+                  ", which holds " (gibibytes free)
+                  ": free space there, or name a roomier directory in TMPDIR")))
+    (doto (work-directory temporary) fs/create-dirs)))
+
+(defn temporary-directory
+  "Return the system temporary directory that this build may work in.
+
+   TMPDIR names it when the operator sets one. The default is /var/tmp and not
+   /tmp, because a build works for hours and wants ten gibibytes, and /tmp is
+   both memory on many hosts and emptied under the feet of a long build."
+  []
+  (or (not-empty (System/getenv "TMPDIR")) "/var/tmp"))
+
+(defn work-directory
+  "Return the scratch directory that one temporary directory holds."
+  [temporary]
+  (fs/path temporary scratch-name))
+
+(defn space-state
+  "Return whether one count of free bytes covers a whole image build."
+  [free]
+  (if (< free required-space) :short :enough))
+
+(defn gibibytes
+  "Return one count of bytes as gibibytes, the way a prerequisite reads."
+  [bytes]
+  (format "%.1f GiB" (/ (double bytes) 1024 1024 1024)))
+
 ;;; Staging
 
 (defn stage!
@@ -365,9 +421,8 @@
 
 (defn generate-image!
   "Run the pinned image generator and return the raw image that it wrote."
-  [pins checkout staged extra]
-  (let [work (fs/path project-root cache-directory "work")
-        name (get-in pins [:device :image-name])
+  [pins checkout staged work extra]
+  (let [name (get-in pins [:device :image-name])
         image (fs/path work (str "image-" name) (str name ".img"))]
     (fs/create-dirs work)
     (fs/delete-if-exists image)
