@@ -1,0 +1,9 @@
+
+=== 2026-08-25T11:37:18.658652776Z agent invocation failure ===
+{:status 124,
+ :text "timed out after 1800000 ms",
+ :failures [],
+ :agent
+ {:harness :claude-code,
+  :session-id "ac2505e6-74e7-4e2c-b338-19be7612c584",
+  :name "Opus 5"}}
