@@ -15,12 +15,16 @@ Everything it owns lives under `probetron/`.
 | `src/probetron/operation.clj`       | pure operation model, validators, and rig command construction    |
 | `src/probetron/version.clj`         | the release version that every role reports                       |
 | `src/probetron/client/cli.clj`      | pure parser of the public command line                            |
+| `src/probetron/client/command.clj`  | pure remote command, SSH argv, and key cache paths                |
+| `src/probetron/client/report.clj`   | pure client information record and its two output forms           |
 | `src/probetron/rig/config.clj`      | pure parser of the rig-only SSH protocol                          |
 | `src/probetron/rig/lifecycle.clj`   | pure ownership model and appliance command lines                  |
 | `src/probetron/rig/hardware.clj`    | pure description of the fixed target slot and its command lines   |
 | `src/probetron/rig/elf.clj`         | pure validator of one uploaded firmware image                     |
 | `src/probetron/rig/information.clj` | pure information record and its two output forms                  |
 | `src/probetron/client/main.clj`     | imperative shell of the client                                    |
+| `src/probetron/client/key.clj`      | imperative shell that refreshes the cached rig key                |
+| `src/probetron/client/session.clj`  | imperative shell of the short client operations                   |
 | `src/probetron/rig/main.clj`        | imperative shell of the rig                                       |
 | `src/probetron/rig/runner.clj`      | imperative shell that owns the target lock and the process groups |
 | `src/probetron/rig/target.clj`      | imperative shell of `info`, `flash`, `erase`, and `reset`         |
@@ -67,6 +71,54 @@ Target-specific values also come from the environment, and an explicit option al
 | `PROBETRON_USB_WAIT_SECONDS` | `--usb-wait-seconds` | 10     |
 
 Exit status 0 reports success, 1 reports a failed operation, 64 reports a usage error, 69 reports a missing rig resource, and 75 reports a rig that is busy with another operation.
+The client returns exactly what the rig returned, and 255 means that SSH never reached the rig at all.
+
+## Client authentication
+
+The rig image generates one SSH key at build time and serves its private half over plain HTTP, so the lab LAN is the whole trust boundary.
+Every operation fetches that key again before it opens SSH, which is why a rebuilt or replaced Pi at the same address needs no cleanup on any client.
+
+```text
+http://<host>/probetron_key  ->  ${XDG_CACHE_HOME:-$HOME/.cache}/probetron/keys/<host>.key
+```
+
+Each host keeps its own cache file, and unchanged bytes leave that file alone.
+Changed bytes arrive through a temporary neighbour with mode `0600` and one atomic rename, so SSH never reads half a key.
+An HTTP failure, an empty answer, an answer that is not a private key, a cache file that anyone else can read, and a failed replacement all stop the operation, even when an older copy is still there.
+
+## Client operations
+
+The client wraps the validated rig command in one SSH invocation that trusts no persistent host key.
+
+```sh
+ssh -i <cache> -T \
+  -o BatchMode=yes -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null \
+  -o LogLevel=ERROR \
+  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP235x --speed-khz 1000'
+```
+
+Both known-host files are `/dev/null` and the log level drops the new-host and changed-host warnings that this provokes, while every SSH error and all remote stderr still reach the client.
+`sudo -n /usr/local/sbin/probetron-rig` is the only program the client ever runs remotely.
+The remote command carries every token quoted for a POSIX shell, so no public value can become a second token however it passed validation, and `flash` streams its ELF file to remote standard input rather than naming a client path.
+
+Client `info` adds what the client itself is and where it cached the key to the report of the rig.
+
+```text
+client probetron: 0.1.0
+client babashka: 1.13.219
+client key: /home/bench/.cache/probetron/keys/pi.lab.key
+probetron: 0.1.0
+babashka: 1.13.219
+probe-rs: probe-rs 0.32.0
+os: Debian GNU/Linux 13 (trixie)
+hostname: probetron-01
+machine-id: 0123456789abcdef0123456789abcdef
+probe: 0:0:/dev/spidev0.0 swd
+```
+
+`--format edn` prints the same facts as `{:client {:probetron ... :babashka ... :key ...} :rig {...}}`, where the rig map is the record that `probetron-rig info --format edn` wrote.
 
 ## Rig protocol
 
@@ -169,3 +221,4 @@ A missing SPI device, GPIO chip, or executable stops the operation before any pr
 The operation model, both command lines, and both entry points parse, validate, and refuse malformed input.
 The rig owns the target lock, the active record, and the process groups of one operation, and `status` reports what owns the target.
 `info`, `flash`, `erase`, and `reset` drive the hardware, while `connect` and `debug` still report the operation they hold the target for.
+The client refreshes the rig key, reaches `info`, `status`, `flash`, `erase`, and `reset` over SSH, and gives back what the rig said, while `connect` and `debug` still name the remote command they would have run.

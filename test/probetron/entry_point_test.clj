@@ -27,9 +27,14 @@
     (let [{:keys [exit err]} (run "bin/probetron" ["info" "--host" "pi" "--nozzle" "2"] {})]
       (is (= operation/exit-usage exit))
       (is (str/includes? err "--nozzle"))))
-  (testing "a valid operation passes validation"
-    (let [{:keys [exit]} (run "bin/probetron" ["reset"] {"PROBETRON_HOST" "pi.lab"})]
-      (is (not= operation/exit-usage exit)))))
+  (testing "a valid operation leaves validation and reaches the client shell"
+    (let [{:keys [exit err]} (run "bin/probetron" ["reset"] {"PROBETRON_HOST" "pi.lab"
+                                                             "HOME" ""
+                                                             "XDG_CACHE_HOME" ""})]
+      (is (not= operation/exit-usage exit))
+      (is (= operation/exit-failure exit))
+      (is (str/includes? err "XDG_CACHE_HOME")
+          "a client without a cache home stops before it asks any host for a key"))))
 
 (deftest rig-entry-point
   (let [{:keys [exit out]} (run "bin/probetron-rig" ["--help"] {})]

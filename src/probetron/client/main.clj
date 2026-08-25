@@ -3,11 +3,12 @@
    It owns the environment, the filesystem, standard streams, and the exit status."
   (:require [babashka.fs :as fs]
             [clojure.java.io :as io]
-            [clojure.string :as str]
             [probetron.client.cli :as cli]
+            [probetron.client.command :as command]
+            [probetron.client.session :as session]
             [probetron.operation :as op]))
 
-(declare environment elf-facts file-header report! execute!)
+(declare environment elf-facts file-header report! execute! unsupported!)
 
 (defn -main
   "Parse the public command line and carry out the requested operation."
@@ -29,11 +30,20 @@
 (defn execute!
   "Carry out one validated operation."
   [operation]
+  (if (contains? session/operations (:operation operation))
+    (session/execute! operation (session/runtime))
+    (unsupported! operation)))
+
+(defn unsupported!
+  "Report a long session that this client cannot open yet.
+
+   The byte, RTT, and DAP sessions still have no client transport, so the client
+   names the remote command that the operation would have run."
+  [operation]
   (binding [*out* *err*]
-    (println (str "probetron: this installation has no rig transport, so "
+    (println (str "probetron: this client has no session transport, so "
                   (name (:operation operation)) " cannot reach " (:host operation)))
-    (println (str "probetron: the operation would run: "
-                  (str/join " " (op/rig-command operation)))))
+    (println (str "probetron: the operation would run: " (command/remote-command operation))))
   op/exit-failure)
 
 (defn environment
