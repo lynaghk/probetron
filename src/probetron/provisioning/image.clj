@@ -468,7 +468,7 @@
         partial (fs/path directory (str name ".part"))]
     (fs/create-dirs directory)
     (stream! {:out (fs/file partial)}
-             ["xz" "--compress" "--threads=0" "-9" "--stdout" (str image)]
+             ["xz" "--compress" "--threads=0" "-6" "--stdout" (str image)]
              (str "cannot compress " image))
     (let [digest (sha-256-file partial)
           record (fs/path directory (str name ".sha256.part"))]
