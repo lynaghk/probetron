@@ -43,7 +43,8 @@
                                                 :info {:exit 0 :out "ARM Chip with debug port"}})})
         report (edn/read-string out)]
     (is (= #{:probetron :babashka :probe-rs :os :hostname :machine-id :probe :target} (set (keys report))))
-    (is (= version/probetron-version (:probetron report)))
+    (is (str/starts-with? (:probetron report) version/probetron-version)
+        "the probetron field names the release and the build it came from")
     (is (= "probe-rs 0.32.0" (:probe-rs report)))
     (is (= "Debian GNU/Linux 13 (trixie)" (:os report)))
     (is (= "probetron-01" (:hostname report)))

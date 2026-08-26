@@ -27,3 +27,10 @@ mmdebstrap:
     # The one thing a rig writes to persistent storage, and the only report
     # that survives a rig which answers on no network at all.
     - systemctl --root="$1" enable probetron-report.service
+    # One login banner, written by the rig entry point itself, so every
+    # interactive login names the same build that 'probetron info' reports and
+    # no second copy of the stamp can drift from the archive.
+    - |-
+      set -eu
+      chroot "$1" /usr/bin/env PATH=/usr/local/bin:/usr/bin:/bin \
+        probetron-rig version > "$1/etc/motd"

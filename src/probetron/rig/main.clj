@@ -6,7 +6,8 @@
             [probetron.rig.runner :as runner]
             [probetron.rig.session :as session]
             [probetron.rig.target :as target]
-            [probetron.operation :as op]))
+            [probetron.operation :as op]
+            [probetron.version :as version]))
 
 (declare report! perform! reset-target!)
 
@@ -18,11 +19,13 @@
 
 (defn report!
   "Write the result of a parse and return the exit status."
-  [{:keys [action text message operation exit]}]
+  [{:keys [action text message program operation exit]}]
   (case action
-    (:help :version) (do (binding [*out* (if (= op/exit-ok exit) *out* *err*)]
-                           (println text))
-                         exit)
+    :help (do (binding [*out* (if (= op/exit-ok exit) *out* *err*)]
+                (println text))
+              exit)
+    :version (do (println (str program " " (version/stamp-line (version/describe))))
+                 exit)
     :error (do (binding [*out* *err*] (println (str lifecycle/program-name ": " message)))
                exit)
     :run (runner/execute! operation (runner/runtime {:perform perform!

@@ -15,7 +15,7 @@
             [probetron.version :as version]))
 
 (declare usage package! plan release-version library-sources library-members members directories
-         write-file! archive-name checksum-line report unsafe-member inside? fatal failure)
+         stamp-member write-file! archive-name checksum-line report unsafe-member inside? fatal failure)
 
 (def build-directory
   "The only directory a release archive may appear in, relative to the project root."
@@ -73,14 +73,15 @@
 (defn package!
   "Write the release archive and its checksum, and return where they are.
 
-   The request takes {:root project :build-dir directory :tag tag
+   The request takes {:root project :build-dir directory :tag tag :built time
    :archive-name name}, and each part defaults to the project directory, its
-   build directory, no tag, and the archive name of the release version.
+   build directory, no tag, the build time now, and the archive name of the
+   release version.
    Return {:version v :archive path :checksum path :sha256 hex :members [...]}
    or {:error message}.
-   Two runs over the same sources write the same bytes, because every member
-   carries a fixed mode, owner, and time and arrives in one sorted order."
-  [{:keys [root build-dir tag] :as request}]
+   Every source member carries a fixed mode, owner, and time and arrives in one
+   sorted order, so two runs differ only in the build stamp that names them."
+  [{:keys [root build-dir tag built] :as request}]
   (let [root (or root ".")
         build-dir (or build-dir (str (fs/normalize (fs/path root build-directory))))
         version-file (str (fs/path root "VERSION"))
@@ -92,8 +93,12 @@
                                 ": run the release from the Probetron project directory")))]
     (if (:error outline)
       outline
-      (let [missing (->> (:members outline)
+      (let [built (or built (version/now))
+            members (vec (sort-by :path (conj (:members outline)
+                                              (stamp-member root (:version outline) built))))
+            missing (->> members
                          (filter #(= :file (:kind %)))
+                         (remove :content)
                          (remove #(fs/regular-file? (:source %))))
             archive-file (fs/path build-dir (or (:archive-name request)
                                                 (archive-name (:version outline))))
@@ -107,10 +112,11 @@
           (failure (str "the archive " archive-file " lies outside the build directory " build-dir))
 
           :else
-          (let [members (for [member (:members outline)]
-                          (cond-> member
-                            (= :file (:kind member)) (assoc :content (fs/read-all-bytes (:source member)))))
-                content (archive/gzip (archive/tar members))
+          (let [staged (for [member members]
+                         (cond-> member
+                           (and (= :file (:kind member)) (not (:content member)))
+                           (assoc :content (fs/read-all-bytes (:source member)))))
+                content (archive/gzip (archive/tar staged))
                 digest (archive/sha-256-hex content)]
             (fs/create-dirs build-dir)
             (write-file! archive-file content)
@@ -119,7 +125,7 @@
              :archive (str archive-file)
              :checksum (str checksum-file)
              :sha256 digest
-             :members (mapv :path (:members outline))}))))))
+             :members (mapv :path members)}))))))
 
 (defn plan
   "Return the pure release plan of one source tree.
@@ -194,6 +200,20 @@
                         {:path document :source (str (fs/path root document)) :kind :file :mode file-mode})
                       library)]
     (vec (sort-by :path (concat (directories (map :path files)) files)))))
+
+(defn stamp-member
+  "Return the generated archive member that carries the build stamp.
+
+   The member holds no source file: bb package reads the commit and the clock
+   and writes lib/probetron/build.edn straight into the archive, so an installed
+   tree names the build it came from without any file in the source tree."
+  [root version built]
+  {:path (str (fs/path library-root "probetron" "build.edn"))
+   :source :generated
+   :kind :file
+   :mode file-mode
+   :content (.getBytes (str (pr-str (assoc (version/git-stamp root built) :version version)) "\n")
+                       "UTF-8")})
 
 (defn directories
   "Return the directory members that hold a set of file paths."

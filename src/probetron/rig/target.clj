@@ -37,7 +37,7 @@
             release (capture! run! (hardware/version-command executables))
             probe (capture! run! (hardware/info-command executables hardware))]
         (println (information/render
-                  (information/report {:probetron version/probetron-version
+                  (information/report {:probetron (version/stamp-line (version/describe))
                                        :babashka (System/getProperty "babashka.version")
                                        :probe-rs (:output release)
                                        :os (read-file (:os-release paths))

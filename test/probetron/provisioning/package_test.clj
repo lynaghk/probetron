@@ -24,21 +24,33 @@
        (remove str/blank?)
        vec))
 
+(defn extract-member
+  "Return the text of one member that tar reads out of an archive."
+  [archive member]
+  (:out (process/shell {:out :string} "tar" "-xzOf" archive member)))
+
 (deftest packages-a-deterministic-release-archive
   (with-build-dir
     (fn [build]
-      (let [first-run (package/package! {:root "." :build-dir build})
-            second-run (package/package! {:root "." :build-dir build})]
+      (let [built "2026-01-01T00:00:00Z"
+            first-run (package/package! {:root "." :build-dir build :built built})
+            second-run (package/package! {:root "." :build-dir build :built built})]
         (testing "the release names itself after the VERSION file"
           (is (nil? (:error first-run)))
           (is (= version/probetron-version (:version first-run)))
           (is (= (str (fs/path build (str "probetron-" version/probetron-version ".tar.gz")))
                  (:archive first-run)))
           (is (= (str (:archive first-run) ".sha256") (:checksum first-run))))
-        (testing "two runs over the same sources write the same bytes"
+        (testing "two runs over the same sources and build time write the same bytes"
           (is (= (:sha256 first-run) (:sha256 second-run)))
           (is (= (:sha256 first-run)
                  (archive/sha-256-hex (fs/read-all-bytes (:archive first-run))))))
+        (testing "the archive bakes a build stamp that names the release and its build time"
+          (let [stamp (read-string (extract-member (:archive first-run) "lib/probetron/build.edn"))]
+            (is (= version/probetron-version (:version stamp)))
+            (is (= built (:built stamp)))
+            (is (string? (:commit stamp)))
+            (is (contains? stamp :dirty?))))
         (testing "the checksum file is what sha256sum reads"
           (is (= (str (:sha256 first-run) "  probetron-" version/probetron-version ".tar.gz\n")
                  (slurp (:checksum first-run)))))
@@ -47,7 +59,7 @@
             (is (= (remove #(str/ends-with? % "/") (:members first-run))
                    (remove #(str/ends-with? % "/") paths)))
             (doseq [expected ["bin/probetron" "bin/probetron-rig" "VERSION" "README.md"
-                              "lib/probetron/operation.clj"
+                              "lib/probetron/build.edn" "lib/probetron/operation.clj"
                               "lib/probetron/client/main.clj" "lib/probetron/rig/main.clj"]]
               (is (some #{expected} paths) (str "the archive holds " expected)))
             (is (not-any? #(str/starts-with? % "/") paths))

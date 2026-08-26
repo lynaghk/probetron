@@ -7,7 +7,8 @@
             [probetron.client.session :as session]
             [probetron.client.shell :as shell]
             [probetron.client.tunnel :as tunnel]
-            [probetron.operation :as op]))
+            [probetron.operation :as op]
+            [probetron.version :as version]))
 
 (declare elf-facts file-header report! execute!)
 
@@ -24,11 +25,13 @@
 
 (defn report!
   "Write the result of a parse and return the exit status."
-  [{:keys [action text message operation exit]} runtime]
+  [{:keys [action text message program operation exit]} runtime]
   (case action
-    (:help :version) (do (binding [*out* (if (= op/exit-ok exit) *out* *err*)]
-                           (println text))
-                         exit)
+    :help (do (binding [*out* (if (= op/exit-ok exit) *out* *err*)]
+                (println text))
+              exit)
+    :version (do (println (str program " " (version/stamp-line (version/describe))))
+                 exit)
     :error (do (binding [*out* *err*] (println (str "probetron: " message)))
                exit)
     :run (execute! operation runtime)))

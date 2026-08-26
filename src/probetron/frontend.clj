@@ -8,8 +8,7 @@
    dispatch, so a new command or a changed option is one edit rather than two.
    Nothing here touches the filesystem, the network, or the hardware."
   (:require [clojure.string :as str]
-            [probetron.operation :as op]
-            [probetron.version :as version]))
+            [probetron.operation :as op]))
 
 (declare front-end-commands command-help parse-command option-message)
 
@@ -29,7 +28,9 @@
   "Turn one argv into an action map for one front end.
 
    Return {:action :run :operation operation}, {:action :help :text text :exit status},
-   {:action :version :text text :exit status}, or {:action :error :message text :exit status}."
+   {:action :version :program name :exit status}, or {:action :error :message text :exit status}.
+   The version action names only the front end, because the build stamp it reads
+   belongs to the imperative shell and not to this pure parse."
   [{:keys [program help-text] :as front-end} argv context]
   (let [[head & remaining] argv]
     (cond
@@ -40,7 +41,7 @@
       {:action :help :text (help-text) :exit op/exit-ok}
 
       (#{"--version" "-V" "version"} head)
-      {:action :version :text (str program " " version/probetron-version) :exit op/exit-ok}
+      {:action :version :program program :exit op/exit-ok}
 
       :else
       (if-let [command ((command-names front-end) head)]
