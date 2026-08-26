@@ -24,13 +24,20 @@
   "Build a validated rig operation from a command keyword and a parsed command line."
   [command {:keys [opts args] :as context}]
   (case command
-    (:info :status)
+    :status
     (op/finish (op/collect [:format] context)
                [(op/unexpected-argument-error args)]
-               (fn [values] {:operation command :format (:format values)}))
+               (fn [values] {:operation :status :format (:format values)}))
+
+    :info
+    (op/finish (op/collect [:speed-khz :format] context)
+               [(op/unexpected-argument-error args)]
+               (fn [values] {:operation :info
+                             :speed-khz (:speed-khz values)
+                             :format (:format values)}))
 
     (:flash :erase)
-    (op/finish (op/collect [:chip :speed-khz] context)
+    (op/finish (op/collect op/chip-and-speed-fields context)
                [(op/unexpected-argument-error args)]
                (fn [values] (cond-> {:operation command
                                      :chip (:chip values)
@@ -80,24 +87,24 @@
 (def command-specs
   "The options that each rig command accepts."
   (let [value frontend/value-option
-        flag frontend/flag-option]
-    {:info {:format value}
+        flag frontend/flag-option
+        chip-and-speed {:chip value :speed-khz value}]
+    {:info {:speed-khz value :format value}
      :status {:format value}
-     :flash {:chip value :speed-khz value}
-     :erase {:chip value :speed-khz value}
+     :flash chip-and-speed
+     :erase chip-and-speed
      :reset {}
-     :connect {:channel value
-               :baud value
-               :usb-wait-seconds value
-               :rtt flag
-               :chip value
-               :speed-khz value
-               :reset-on-exit flag}
+     :connect (merge {:channel value
+                      :baud value
+                      :usb-wait-seconds value
+                      :rtt flag
+                      :reset-on-exit flag}
+                     chip-and-speed)
      :debug {:reset-on-exit flag}}))
 
 (def command-usage
   "The documented form of every rig command."
-  {:info "  probetron-rig info    [--format <text|edn>]"
+  {:info "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
    :status "  probetron-rig status  [--format <text|edn>]"
    :flash "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
    :erase "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"

@@ -18,14 +18,15 @@
 
 (deftest information-identifies-the-rig-and-the-target
   (let [{:keys [exit out calls directory]}
-        (with-rig! {:operation :info :format :text}
+        (with-rig! {:operation :info :format :text :speed-khz 20}
                     {:responses (by-command
                                  {:version {:exit 0 :out "probe-rs 0.32.0\n"}
                                   :info {:exit 0 :out "Probe: linux SPI\nARM Chip with debug port\n"}})})]
     (is (= op/exit-ok exit))
-    (testing "the probe-rs argv names the Linux SPI selector and the SWD protocol"
+    (testing "info clocks the bus at the requested speed and asks probe-rs to name every component"
       (is (= [[(probe-rs directory) "--version"]
-              [(probe-rs directory) "info" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"]]
+              [(probe-rs directory) "info" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
+               "--speed" "20" "--verbose"]]
              calls)))
     (is (str/includes? out (str "probetron: " version/probetron-version)))
     (is (str/includes? out (str "babashka: " (System/getProperty "babashka.version"))))

@@ -20,7 +20,7 @@
 (def exit-busy 75)
 
 ;; Defaults and bounds of the target-specific values.
-(def default-speed-khz 1000)
+(def default-speed-khz 20)
 (def min-speed-khz 1)
 (def max-speed-khz 50000)
 (def default-baud 115200)
@@ -47,21 +47,39 @@
 (def rig-byte-port 5555)
 (def rig-dap-port 50000)
 
+(def chip-and-speed-fields
+  "The options that name the chip to load and clock the SWD bus.
+
+   Every command that flashes, erases, or attaches to a named target resolves
+   both, so the two travel together wherever a probe-rs attach is configured."
+  [:chip :speed-khz])
+
+(defn speed-args
+  "Return the --speed-khz token pair that clocks one probe-rs attach."
+  [{:keys [speed-khz]}]
+  ["--speed-khz" (str speed-khz)])
+
+(defn chip-and-speed-args
+  "Return the shared --chip and --speed-khz tokens of one named-target attach."
+  [{:keys [chip] :as attach}]
+  (into ["--chip" chip] (speed-args attach)))
+
 (defn rig-command
   "Return the argv that runs a public operation on the rig.
 
    Client-only values such as the local port and the pty request stay out of it
    and each ELF file travels over standard input rather than as a path."
-  [{:keys [operation format chip speed-khz channel baud usb-wait-seconds rtt reset-on-exit?]}]
+  [{:keys [operation format channel baud usb-wait-seconds rtt reset-on-exit?] :as public}]
   (into ["probetron-rig" (name operation)]
         (case operation
-          (:info :status) ["--format" (name format)]
-          (:flash :erase) ["--chip" chip "--speed-khz" (str speed-khz)]
+          :status ["--format" (name format)]
+          :info (into (speed-args public) ["--format" (name format)])
+          (:flash :erase) (chip-and-speed-args public)
           :reset []
           :connect (cond-> ["--channel" (name channel)]
                      (= :uart channel) (into ["--baud" (str baud)])
                      (= :usb channel) (into ["--usb-wait-seconds" (str usb-wait-seconds)])
-                     (some? rtt) (into ["--rtt" "--chip" (:chip rtt) "--speed-khz" (str (:speed-khz rtt))])
+                     (some? rtt) (into (cons "--rtt" (chip-and-speed-args rtt)))
                      reset-on-exit? (conj "--reset-on-exit"))
           :debug (cond-> []
                    reset-on-exit? (conj "--reset-on-exit")))))
@@ -160,14 +178,22 @@
   "Build the operation of one command from a context whose host is resolved."
   [command {:keys [opts args elf-facts] :as context}]
   (case command
-    (:info :status)
+    :status
     (finish (collect [:host :format] context)
             [(unexpected-argument-error args)]
-            (fn [values] {:operation command :host (:host values) :format (:format values)}))
+            (fn [values] {:operation :status :host (:host values) :format (:format values)}))
+
+    :info
+    (finish (collect [:host :speed-khz :format] context)
+            [(unexpected-argument-error args)]
+            (fn [values] {:operation :info
+                          :host (:host values)
+                          :speed-khz (:speed-khz values)
+                          :format (:format values)}))
 
     :flash
     (let [elf (first args)]
-      (finish (collect [:host :chip :speed-khz] context)
+      (finish (collect (into [:host] chip-and-speed-fields) context)
               (into [(when-not elf "missing argument: pass the path of the ELF file to flash")
                      (unexpected-argument-error (rest args))]
                     (when elf (elf-errors elf (elf-facts elf))))
@@ -178,7 +204,7 @@
                             :elf elf})))
 
     :erase
-    (finish (collect [:host :chip :speed-khz] context)
+    (finish (collect (into [:host] chip-and-speed-fields) context)
             [(unexpected-argument-error args)]
             (fn [values] {:operation :erase
                           :host (:host values)
@@ -236,7 +262,7 @@
   (cond-> []
     (= :uart channel) (conj :baud)
     (= :usb channel) (conj :usb-wait-seconds)
-    rtt? (into [:chip :speed-khz])))
+    rtt? (into chip-and-speed-fields)))
 
 (defn connect-option-errors
   "Return the connect options that belong to another channel or to no RTT at all.

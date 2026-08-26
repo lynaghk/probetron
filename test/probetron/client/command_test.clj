@@ -38,8 +38,8 @@
 (deftest the-remote-command-reaches-the-rig-through-sudo
   (is (= "sudo -n /usr/local/sbin/probetron-rig reset"
          (command/remote-command {:operation :reset :host "pi.lab"})))
-  (is (= "sudo -n /usr/local/sbin/probetron-rig info --format edn"
-         (command/remote-command {:operation :info :host "pi.lab" :format :edn})))
+  (is (= "sudo -n /usr/local/sbin/probetron-rig info --speed-khz 20 --format edn"
+         (command/remote-command {:operation :info :host "pi.lab" :format :edn :speed-khz 20})))
   (is (= "sudo -n /usr/local/sbin/probetron-rig status --format text"
          (command/remote-command {:operation :status :host "pi.lab" :format :text})))
   (is (= "sudo -n /usr/local/sbin/probetron-rig erase --chip RP235x --speed-khz 1000"

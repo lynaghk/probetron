@@ -36,13 +36,14 @@
     (is (not (str/includes? (:text (parse [])) "probetron-rig shell")))))
 
 (deftest rig-information
-  (is (= {:operation :info :format :text} (operation ["info"])))
-  (is (= {:operation :info :format :edn} (operation ["info" "--format" "edn"])))
+  (is (= {:operation :info :format :text :speed-khz 20} (operation ["info"])))
+  (is (= {:operation :info :format :edn :speed-khz 20} (operation ["info" "--format" "edn"])))
+  (is (= 50 (:speed-khz (operation ["info" "--speed-khz" "50"]))))
   (is (= {:operation :status :format :text} (operation ["status"])))
   (is (str/includes? (usage-error ["status" "--format" "toml"]) "--format")))
 
 (deftest rig-flash-reads-the-elf-from-standard-input
-  (is (= {:operation :flash :chip "RP2350" :speed-khz 1000 :elf :stdin}
+  (is (= {:operation :flash :chip "RP2350" :speed-khz 20 :elf :stdin}
          (operation ["flash" "--chip" "RP2350"])))
   (is (= 4000 (:speed-khz (operation ["flash" "--chip" "RP2350" "--speed-khz" "4000"]))))
   (testing "no client path reaches the rig"
@@ -50,7 +51,7 @@
   (is (str/includes? (usage-error ["flash"]) "--chip")))
 
 (deftest rig-erase-and-reset
-  (is (= {:operation :erase :chip "RP2350" :speed-khz 1000} (operation ["erase" "--chip" "RP2350"])))
+  (is (= {:operation :erase :chip "RP2350" :speed-khz 20} (operation ["erase" "--chip" "RP2350"])))
   (is (= {:operation :reset} (operation ["reset"])))
   (is (str/includes? (usage-error ["reset" "--chip" "RP2350"]) "--chip")))
 
@@ -84,7 +85,7 @@
 (deftest the-rig-ignores-client-environment-defaults
   (let [env {"PROBETRON_CHIP" "RP2350" "PROBETRON_SPEED_KHZ" "2000" "PROBETRON_UART_BAUD" "9600"}]
     (is (str/includes? (usage-error ["flash"] {:env env}) "--chip"))
-    (is (= 1000 (:speed-khz (operation ["erase" "--chip" "RP2040"] {:env env}))))
+    (is (= 20 (:speed-khz (operation ["erase" "--chip" "RP2040"] {:env env}))))
     (is (= 115200 (:baud (operation ["connect" "--channel" "uart"] {:env env}))))))
 
 (deftest rig-rejects-unknown-commands-and-options

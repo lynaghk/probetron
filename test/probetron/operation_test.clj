@@ -24,7 +24,7 @@
   (is (= 75 operation/exit-busy)))
 
 (deftest defaults
-  (is (= 1000 operation/default-speed-khz))
+  (is (= 20 operation/default-speed-khz))
   (is (= 115200 operation/default-baud))
   (is (= 10 operation/default-usb-wait-seconds))
   (is (= 60 operation/max-usb-wait-seconds)))
@@ -33,8 +33,8 @@
   (is (= (str/trim (slurp "VERSION")) version/probetron-version)))
 
 (deftest rig-command-of-short-operations
-  (is (= ["probetron-rig" "info" "--format" "text"]
-         (operation/rig-command {:operation :info :host "pi" :format :text})))
+  (is (= ["probetron-rig" "info" "--speed-khz" "20" "--format" "text"]
+         (operation/rig-command {:operation :info :host "pi" :format :text :speed-khz 20})))
   (is (= ["probetron-rig" "status" "--format" "edn"]
          (operation/rig-command {:operation :status :host "pi" :format :edn})))
   (is (= ["probetron-rig" "reset"]
@@ -74,7 +74,7 @@
                   (assoc connect-operation :rtt {:elf "app.elf" :chip "RP2350" :speed-khz 2000})
                   {:operation :erase :host "pi" :chip "RP2350" :speed-khz 4000}
                   {:operation :reset :host "pi"}
-                  {:operation :info :host "pi" :format :edn}
+                  {:operation :info :host "pi" :format :edn :speed-khz 20}
                   {:operation :debug :host "pi" :local-port 3333 :reset-on-exit? true}]]
     (let [argv (rest (operation/rig-command public))
           result (rig/parse argv {})]

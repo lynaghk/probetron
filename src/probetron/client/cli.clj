@@ -58,29 +58,29 @@
 
    --usb names the rig on the USB console, so every command takes it."
   (let [value frontend/value-option
-        flag frontend/flag-option]
-    {:info {:host value :usb flag :format value}
+        flag frontend/flag-option
+        chip-and-speed {:chip value :speed-khz value}]
+    {:info {:host value :usb flag :speed-khz value :format value}
      :status {:host value :usb flag :format value}
-     :flash {:host value :usb flag :chip value :speed-khz value}
-     :erase {:host value :usb flag :chip value :speed-khz value}
+     :flash (merge {:host value :usb flag} chip-and-speed)
+     :erase (merge {:host value :usb flag} chip-and-speed)
      :reset {:host value :usb flag}
      :shell {:host value :usb flag}
-     :connect {:host value
-               :usb flag
-               :channel value
-               :baud value
-               :usb-wait-seconds value
-               :local-port value
-               :rtt value
-               :chip value
-               :speed-khz value
-               :pty flag
-               :reset-on-exit flag}
+     :connect (merge {:host value
+                      :usb flag
+                      :channel value
+                      :baud value
+                      :usb-wait-seconds value
+                      :local-port value
+                      :rtt value
+                      :pty flag
+                      :reset-on-exit flag}
+                     chip-and-speed)
      :debug {:host value :usb flag :local-port value :reset-on-exit flag}}))
 
 (def command-usage
   "The documented form of every public command."
-  {:info "  probetron info    --host <host> [--format <text|edn>]"
+  {:info "  probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]"
    :status "  probetron status  --host <host> [--format <text|edn>]"
    :flash "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] <elf>"
    :erase "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"

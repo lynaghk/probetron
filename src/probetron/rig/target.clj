@@ -31,11 +31,11 @@
 
 (defn report-information!
   "Report what the rig is and what the probe finds on the SWD bus."
-  [{:keys [format]} {:keys [executables hardware paths filesystem run!] :as runtime}]
+  [{:keys [format speed-khz]} {:keys [executables hardware paths filesystem run!] :as runtime}]
   (or (missing-status runtime [:probe-rs :spi-device])
       (let [read-file (:read-file filesystem)
             release (capture! run! (hardware/version-command executables))
-            probe (capture! run! (hardware/info-command executables hardware))]
+            probe (capture! run! (hardware/info-command executables hardware {:speed-khz speed-khz}))]
         (println (information/render
                   (information/report {:probetron (version/stamp-line (version/describe))
                                        :babashka (System/getProperty "babashka.version")

@@ -106,7 +106,7 @@
 (deftest information-joins-the-client-facts-to-the-rig-report
   (with-client! {:out rig-text}
     (fn [client]
-      (let [{:keys [exit out]} (run-client! client {:operation :info :host "pi.lab" :format :text})]
+      (let [{:keys [exit out]} (run-client! client {:operation :info :host "pi.lab" :format :text :speed-khz 20})]
         (is (= op/exit-ok exit))
         (is (str/includes? out (str "client probetron: " version/probetron-version)))
         (is (str/includes? out (str "client babashka: " (System/getProperty "babashka.version"))))
@@ -114,13 +114,13 @@
         (is (str/includes? out "probe-rs: probe-rs 0.32.0"))
         (is (str/includes? out "hostname: probetron-01"))
         (is (str/includes? out "machine-id: 0123456789abcdef0123456789abcdef"))
-        (is (= "sudo -n /usr/local/sbin/probetron-rig info --format text"
+        (is (= "sudo -n /usr/local/sbin/probetron-rig info --speed-khz 20 --format text"
                (last (recorded-argv client))))))))
 
 (deftest information-in-edn-carries-both-sides-under-stable-keys
   (with-client! {:out rig-edn}
     (fn [client]
-      (let [{:keys [exit out]} (run-client! client {:operation :info :host "pi.lab" :format :edn})
+      (let [{:keys [exit out]} (run-client! client {:operation :info :host "pi.lab" :format :edn :speed-khz 20})
             report (edn/read-string out)]
         (is (= op/exit-ok exit))
         (is (= #{:client :rig} (set (keys report))))
@@ -132,7 +132,7 @@
         (is (= "Debian GNU/Linux 13 (trixie)" (:os (:rig report))))
         (is (= "probetron-01" (:hostname (:rig report))))
         (is (= "0123456789abcdef0123456789abcdef" (:machine-id (:rig report))))
-        (is (= "sudo -n /usr/local/sbin/probetron-rig info --format edn"
+        (is (= "sudo -n /usr/local/sbin/probetron-rig info --speed-khz 20 --format edn"
                (last (recorded-argv client))))))))
 
 (deftest information-that-the-rig-cannot-give-fails-and-keeps-what-it-said

@@ -74,9 +74,13 @@
   [probe-rs "--version"])
 
 (defn info-command
-  "Return the argv that identifies the target over the direct Linux SPI probe."
-  [executables hardware]
-  (probe-command executables hardware "info" {}))
+  "Return the argv that identifies the target over the direct Linux SPI probe.
+
+   probe-rs info ignores an explicit chip, so info clocks the bus at the shared
+   speed alone and asks for the verbose component tree, which names the debug
+   port and the vendor of a target that auto-detection cannot pin to one part."
+  [executables hardware {:keys [speed-khz]}]
+  (conj (probe-command executables hardware "info" {:speed-khz speed-khz}) "--verbose"))
 
 (defn download-command
   "Return the argv that downloads one uploaded ELF and verifies it on the target."

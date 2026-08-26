@@ -68,8 +68,9 @@ export PROBETRON_CHIP=RP2350
 probetron info
 ```
 
-The `target:` block must name an RP2350 debug port and the `probe:` line must read `0:0:/dev/spidev0.0 swd`.
-A target that reads as absent is most often the resistor orientation of step 2.
+The `target:` block must show a debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`.
+probe-rs reads the debug port over SWD but names the exact part only for some families, so the block identifies an RP2350 by name yet identifies many other chips by vendor and core alone.
+A target that reads as absent is most often the resistor orientation of step 2, or an SWD clock too fast for the wiring, which `--speed-khz` lowers.
 
 **5. Build a hello world.**
 Nothing here is specific to Probetron: it is the ordinary Pico SDK path, and it runs on your own machine.
@@ -224,7 +225,7 @@ A checkout runs the same client from `bin/probetron`, which loads `../src` inste
 ## Public commands
 
 ```text
-probetron info    --host <host> [--format <text|edn>]
+probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]
 probetron status  --host <host> [--format <text|edn>]
 probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] <elf>
 probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]
@@ -242,7 +243,7 @@ Target-specific values also come from ordinary environment variables, and an exp
 | ---------------------------- | -------------------- | ------ | ----------------------------------------------- |
 | `PROBETRON_HOST`             | `--host`             | —      | a DNS name, an IPv4 literal, or an IPv6 literal |
 | `PROBETRON_CHIP`             | `--chip`             | —      | a probe-rs chip name such as `RP2350`           |
-| `PROBETRON_SPEED_KHZ`        | `--speed-khz`        | 1000   | 1 to 50000 kHz                                  |
+| `PROBETRON_SPEED_KHZ`        | `--speed-khz`        | 20     | 1 to 50000 kHz                                  |
 | `PROBETRON_UART_BAUD`        | `--baud`             | 115200 | 50 to 4000000 bit/s                             |
 | `PROBETRON_USB_WAIT_SECONDS` | `--usb-wait-seconds` | 10     | 0 to 60 seconds                                 |
 
@@ -254,7 +255,8 @@ export PROBETRON_CHIP=RP2350
 ```
 
 `--chip` is the name that the pinned probe-rs knows, which `probe-rs chip list | grep -i rp2` prints on the rig, and hardware qualification records the exact spelling for RP2350.
-`--speed-khz` is the SWD clock, and 1000 kHz is the conservative default that every qualification run starts from.
+`--speed-khz` is the SWD clock, and 20 kHz is the conservative default that reaches a target on almost any wiring; a qualification run raises it to the fastest speed one rig holds.
+`info` clocks the bus at this speed too, so a target that auto-detection cannot pin still reads reliably.
 
 Exit status 0 reports success, 1 reports a failed operation, 64 reports a usage error, 69 reports a missing rig resource, and 75 reports a rig that is busy with another operation.
 The client returns exactly what the rig returned, and 255 means that SSH never reached the rig at all.
@@ -513,7 +515,7 @@ ssh -i <cache> -T \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP2350 --speed-khz 1000'
+  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP2350 --speed-khz 20'
 ```
 
 Both known-host files are `/dev/null`, and the log level drops the new-host and changed-host warnings that this provokes, while every SSH error and all remote stderr still reach the client.
@@ -540,7 +542,7 @@ Mode `0600` is what SSH insists on, and both known-host files are `/dev/null`, s
 `sudo -n /usr/local/sbin/probetron-rig` needs no interactive login shell and takes the same target lock as every client operation.
 
 ```text
-probetron-rig info    [--format <text|edn>]
+probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]
 probetron-rig status  [--format <text|edn>]
 probetron-rig flash   --chip <chip> [--speed-khz <speed>]
 probetron-rig erase   --chip <chip> [--speed-khz <speed>]
@@ -555,7 +557,7 @@ probetron-rig debug   [--reset-on-exit]
 ssh -i /tmp/probetron_key -T -o BatchMode=yes -o IdentitiesOnly=yes \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR \
-  probetron@probetron.lab 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP2350 --speed-khz 1000' \
+  probetron@probetron.lab 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP2350 --speed-khz 20' \
   < firmware.elf
 ```
 
@@ -686,10 +688,10 @@ The one DUT slot never moves, so the rig inlines it.
 The rig commands are equally fixed.
 
 ```text
-probe-rs info     --probe 0:0:/dev/spidev0.0 --protocol swd
-probe-rs download --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 1000 --verify <upload>
-probe-rs erase    --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 1000
-probe-rs attach   --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 1000 <upload>
+probe-rs info     --probe 0:0:/dev/spidev0.0 --protocol swd --speed 20 --verbose
+probe-rs download --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20 --verify <upload>
+probe-rs erase    --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20
+probe-rs attach   --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20 <upload>
 probe-rs dap-server --port 50000 --ip 127.0.0.1
 gpioset --chip /dev/gpiochip0 --hold-period 100ms 26=0
 socat TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1 FILE:/dev/ttyAMA0,raw,echo=0,b115200
@@ -766,7 +768,7 @@ The recovery from all of them is the same: reboot the rig, and the volatile lock
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `missing SPI device /dev/spidev0.0`                              | SPI0 is off, or the rig booted an image without the hardware layer                                      | check `dtparam=spi=on` in `/boot/firmware/config.txt`, reboot, and confirm `ls -l /dev/spidev0.0` and the `0:0:/dev/spidev0.0` selector that `probetron info` prints     |
 | `missing SWD SPI device /dev/spidev_swd*`                        | the udev rule that names the SWD bus is absent                                                          | reinstall the rig image, then confirm `ls -l /dev/spidev_swd0` points at `spidev0.0`; only that alias reaches DAP discovery                                              |
-| probe-rs finds no target, or reports an ARM DP error             | SWD wiring, the 1 kΩ orientation, ground, or the SWD clock                                              | check pins 23, 21, and 19 against the wiring table, confirm MISO taps the DUT side of the 1 kΩ resistor, add a ground return on pin 20, then retry at `--speed-khz 1000` |
+| probe-rs finds no target, or reports an ARM DP error             | SWD wiring, the 1 kΩ orientation, ground, or the SWD clock                                              | check pins 23, 21, and 19 against the wiring table, confirm MISO taps the DUT side of the 1 kΩ resistor, add a ground return on pin 20, then retry, lowering `--speed-khz` when the debug port answers but the memory read does not |
 | `the reset of the target failed with gpioset exit ...`           | GPIO26 cannot drive RUN                                                                                 | check the wire from header pin 37 to RUN, check that nothing else claims GPIO26 with `gpioinfo`, and confirm `/dev/gpiochip0` exists                                     |
 | firmware flashes but never starts                                | RUN is not wired, so only a verified download and no reset reached the DUT                              | wire pin 37 to RUN; `probetron reset` must restart the firmware on its own                                                                                               |
 | `missing UART device /dev/ttyAMA0`                               | UART0 is off, or the serial console still owns it                                                       | check `enable_uart=1` and `dtoverlay=disable-bt` in `config.txt`, confirm no `console=serial0` in `cmdline.txt`, and confirm `serial-getty@ttyAMA0` is masked            |
@@ -791,12 +793,12 @@ Every `ssh probetron@<host>` command below is the raw SSH path of the previous s
 When a measurement differs from what this document or `image/pins.edn` states, change the pin or the documentation.
 A discrepancy that hides behind runtime inventory is a defect, because the rig deliberately owns no inventory.
 
-1. **Identify the target.** Wire SWD as the table above says, then run `probetron info --host <host>`. The `target:` block must name an RP2350 debug port and the `probe:` line must read `0:0:/dev/spidev0.0 swd`. Record the exact chip name that `ssh probetron@<host> 'probe-rs chip list' | grep -i rp2` prints, and correct every `--chip RP2350` example here if it differs.
-2. **Prove the link at 1 MHz.** `probetron info` asks probe-rs at its own default clock, so run one explicit-speed operation as well: `probetron flash --host <host> --chip RP2350 --speed-khz 1000 blinky.elf`. It must verify and start the firmware.
-3. **Step through the candidate speeds.** Run the same flash five times at each of 1000, 2000, 4000, 8000, 12000, 16000, and 24000 kHz, and stop at the first speed that fails once.
+1. **Identify the target.** Wire SWD as the table above says, then run `probetron info --host <host>`. The `target:` block must show the debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`. Record the exact chip name that `ssh probetron@<host> 'probe-rs chip list' | grep -i rp2` prints, and correct every `--chip RP2350` example here if it differs.
+2. **Prove the link at the default speed.** `probetron info` reads the bus at 20 kHz, so run one write as well: `probetron flash --host <host> --chip RP2350 --speed-khz 20 blinky.elf`. It must verify and start the firmware.
+3. **Step through the candidate speeds.** Run the same flash five times at each of 20, 100, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000, and 24000 kHz, and stop at the first speed that fails once.
 
    ```sh
-   for speed in 1000 2000 4000 8000 12000 16000 24000; do
+   for speed in 20 100 250 500 1000 2000 4000 8000 12000 16000 24000; do
      for attempt in 1 2 3 4 5; do
        probetron flash --host <host> --chip RP2350 --speed-khz "$speed" blinky.elf ||
          { echo "FAILED at $speed" ; break 2 ; }
@@ -804,7 +806,7 @@ A discrepancy that hides behind runtime inventory is a defect, because the rig d
    done
    ```
 
-   Record the highest speed that passed every attempt, take one step back from it, and pin that value: change `default-speed-khz` in `src/probetron/operation.clj` and the default in the environment table above, or document why the bench keeps 1000 kHz.
+   Record the highest speed that passed every attempt, take one step back from it, and pin that value: change `default-speed-khz` in `src/probetron/operation.clj` and the default in the environment table above, or document why the bench keeps 20 kHz.
 
 4. **Verify GPIO reset.** Flash firmware whose startup is visible from outside, such as a blink pattern that begins with three fast pulses, then run `probetron reset --host <host>`. The startup pattern must begin again, with no BOOTSEL and no physical reset press, and the command must exit 0. A reset that only works when somebody touches the board means GPIO26 never reaches RUN. Reset takes the short lock, so run it while no session holds the target.
 5. **Reverify the DUT slot.** Plug the DUT in and read its ancestry on the rig.
