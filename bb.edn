@@ -12,4 +12,10 @@
            :task (System/exit (package/main! *command-line-args*))}
   image   {:doc "Build the pinned Raspberry Pi 4 rig image under build/"
            :requires ([probetron.provisioning.image :as image])
-           :task (System/exit (image/main! *command-line-args*))}}}
+           :task (System/exit (image/main! *command-line-args*))}
+  disks   {:doc "List the disks this macOS host can see, removable ones lettered"
+           :requires ([probetron.provisioning.flash :as flash])
+           :task (System/exit (flash/list-disks! *command-line-args*))}
+  flash   {:doc "Write a built image to a removable disk you pick (macOS)"
+           :requires ([probetron.provisioning.flash :as flash])
+           :task (System/exit (flash/flash! *command-line-args*))}}}

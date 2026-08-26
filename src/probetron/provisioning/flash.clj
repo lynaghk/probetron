@@ -1,0 +1,315 @@
+(ns probetron.provisioning.flash
+  "Write a built Probetron image to an SD card on macOS.
+
+   `flash!` and `list-disks!` are the two entry points, and both start with the
+   platform gate so a build host that cannot flash fails before it lists one
+   disk. `flash!` shows the removable disks as a lettered menu, and the letter
+   you pick is the whole of the confirmation: only removable disks carry a
+   letter, and each one names its size and where it is mounted. Everything below
+   the entry points is either a pure reading of the diskutil report or the
+   imperative shell that owns diskutil, dd, and standard streams.
+
+   The image travels to the raw device through `xz -dc | sudo dd`, so the write
+   never lands a whole image in memory and never touches an internal disk."
+  (:require [babashka.fs :as fs]
+            [babashka.process :as process]
+            [cheshire.core :as json]
+            [clojure.java.io :as io]
+            [clojure.string :as str]
+            [probetron.operation :as op]))
+
+(declare usage enumerate! selectable internal order-disks pick letters menu!
+         resolve-image! verify-image! write! prompt-disk!
+         disk-records disk-record partition-mounts format-size
+         json! stream! sha-256-file fail! fatal
+         platform! image-tool!)
+
+(def project-root
+  "The Probetron project directory, which holds bb.edn and build/."
+  (->> (iterate fs/parent (fs/absolutize *file*))
+       (take-while some?)
+       (filter #(fs/regular-file? (fs/path % "bb.edn")))
+       first
+       str))
+
+(def build-glob
+  "How a finished build names the one image that `bb flash` writes by default."
+  "build/*.img.xz")
+
+(defn flash!
+  "Write a built image to a removable disk that the operator picks, and return an exit status."
+  [argv]
+  (if (some #{"--help" "-h"} argv)
+    (do (println (usage)) op/exit-ok)
+    (try
+      (platform!)
+      (let [image (resolve-image! (first argv))
+            disks (enumerate!)
+            removable (order-disks (selectable disks))]
+        (verify-image! image)
+        (menu! removable (internal disks))
+        (if-let [disk (prompt-disk! removable)]
+          (write! disk image)
+          (do (println "flash: cancelled, no disk written") op/exit-ok)))
+      (catch clojure.lang.ExceptionInfo exception
+        (fatal (ex-message exception) (:status (ex-data exception) op/exit-failure))))))
+
+(defn list-disks!
+  "Print the disks that this host can see, removable ones lettered, and return an exit status."
+  [argv]
+  (if (some #{"--help" "-h"} argv)
+    (do (println (usage)) op/exit-ok)
+    (try
+      (platform!)
+      (let [disks (enumerate!)]
+        (menu! (order-disks (selectable disks)) (internal disks))
+        op/exit-ok)
+      (catch clojure.lang.ExceptionInfo exception
+        (fatal (ex-message exception) (:status (ex-data exception) op/exit-failure))))))
+
+(defn usage
+  "Return what the flash commands may say, one line to a line."
+  []
+  (str/join
+   \newline
+   ["Usage: bb flash [image]     Write a built image to a removable disk you pick."
+    "       bb disks             List the disks this host can see."
+    ""
+    "Runs on macOS alone and needs xz on the PATH."
+    ""
+    (str "The image defaults to the one " build-glob " that a build leaves,"
+         " and a path argument names another.")
+    "flash lists the removable disks as a lettered menu, and the letter you pick"
+    "is the confirmation: only removable disks carry a letter."]))
+
+;;; Pure reading of the diskutil report
+
+(defn disk-records
+  "Return one record for every whole disk in a diskutil report and its per-disk facts.
+
+   The report is `diskutil list -plist physical` as parsed JSON, and facts maps
+   each disk node to its `diskutil info -plist` as parsed JSON."
+  [report facts]
+  (let [by-node (into {} (for [entry (:AllDisksAndPartitions report)]
+                           [(:DeviceIdentifier entry) entry]))]
+    (for [node (:WholeDisks report)]
+      (disk-record node (get by-node node) (get facts node)))))
+
+(defn disk-record
+  "Return the one record of a whole disk from its list entry and its info map."
+  [node entry info]
+  {:node (str "/dev/" node)
+   :raw-node (str "/dev/r" node)
+   :name (or (not-empty (:MediaName info)) (:IORegistryEntryName info) node)
+   :size (:Size info)
+   :internal? (true? (:Internal info))
+   :mounts (partition-mounts entry)})
+
+(defn partition-mounts
+  "Return every mount point of one whole disk, across plain and APFS volumes."
+  [entry]
+  (->> (concat (:Partitions entry) (:APFSVolumes entry))
+       (keep :MountPoint)
+       (remove str/blank?)
+       vec))
+
+(defn selectable
+  "Return the disks that a flash may write, which are the removable ones alone."
+  [disks]
+  (remove :internal? disks))
+
+(defn internal
+  "Return the disks that a flash may never write, which a menu shows for context."
+  [disks]
+  (filter :internal? disks))
+
+(defn order-disks
+  "Return disks in the order a menu lists them: the smallest removable disk first.
+
+   An SD card is the smallest disk on almost every bench, so ascending size puts
+   the likely target at the top of the letters."
+  [disks]
+  (sort-by :size disks))
+
+(defn letters
+  "Return the first n menu letters, a b c and on."
+  [n]
+  (map #(str (char (+ (int \a) %))) (range n)))
+
+(defn pick
+  "Return the disk that one menu letter names, or nil when no letter matches."
+  [letter disks]
+  (get (zipmap (letters (count disks)) disks) letter))
+
+(defn format-size
+  "Return a byte count as whole decimal gigabytes, the way diskutil counts them."
+  [bytes]
+  (if bytes
+    (format "%.0f GB" (/ (double bytes) 1e9))
+    "unknown size"))
+
+(defn describe-disk
+  "Return the one line that names a disk in a menu, given its leading marker."
+  [marker {:keys [node name size mounts]}]
+  (format "%-4s %-11s %-22s %8s   %s"
+          marker node name (format-size size)
+          (if (seq mounts) (str/join " " mounts) "(not mounted)")))
+
+;;; Imperative shell
+
+(defn platform!
+  "Fail unless this host is a macOS host that carries xz."
+  []
+  (let [os (str/trim (:out @(process/process ["uname" "-s"] {:out :string :err :string})))]
+    (when-not (= "Darwin" os)
+      (fail! (str "flash runs on macOS alone, and this host is " os
+                  ": flash the card from the Mac that built it") op/exit-unavailable))
+    (when-not (fs/which "xz")
+      (fail! (str "flash needs xz to unpack the image, and this host has none.\n"
+                  "Install it with one of:\n"
+                  "  brew install xz\n"
+                  "  sudo port install xz")
+             op/exit-unavailable))))
+
+(defn resolve-image!
+  "Return the image to write: the named path, or the one image a build left.
+
+   A build writes exactly one xz image under build/, so no argument means that
+   image, and any other count of them asks the operator to name one."
+  [named]
+  (let [image (fs/path (if named
+                         (fs/absolutize named)
+                         (let [built (fs/glob project-root build-glob)]
+                           (case (count built)
+                             1 (first built)
+                             0 (fail! (str "no built image under " build-glob
+                                           ": run 'bb image' first, or pass an image path"))
+                             (fail! (str (count built) " images under " build-glob
+                                         ": pass the one to flash as an argument"))))))]
+    (when-not (fs/regular-file? image)
+      (fail! (str "cannot read image " image ": pass the path of a readable image file")))
+    (str image)))
+
+(defn verify-image!
+  "Fail unless an image matches the digest that a build recorded beside it.
+
+   A build writes <image>.sha256, and an operator who passes another image may
+   have none: a present digest that matches is the only pass, and no digest at
+   all is a warning rather than a stop."
+  [image]
+  (let [record (fs/path (str image ".sha256"))]
+    (if-not (fs/regular-file? record)
+      (binding [*out* *err*]
+        (println (str "flash: no " (fs/file-name record) " beside the image, so its contents go unchecked")))
+      (let [expected (first (str/split (str/trim (slurp (fs/file record))) #"\s+"))
+            found (sha-256-file image)]
+        (when-not (= expected found)
+          (fail! (str "the image " (fs/file-name (fs/path image)) " has digest " found
+                      " and " (fs/file-name record) " records " expected
+                      ": build the image again")))))))
+
+(defn enumerate!
+  "Return one record for every physical whole disk that diskutil reports."
+  []
+  (let [report (json! "diskutil list -plist physical" "cannot list the disks")
+        facts (into {} (for [node (:WholeDisks report)]
+                         [node (json! (str "diskutil info -plist " node)
+                                      (str "cannot read disk " node))]))]
+    (disk-records report facts)))
+
+(defn menu!
+  "Print the removable disks as a lettered menu, and the internal disks below."
+  [removable internal-disks]
+  (if (empty? removable)
+    (println "No removable disks. Insert the SD card and try again.")
+    (do
+      (println "Removable disks:")
+      (doseq [[letter disk] (map vector (letters (count removable)) removable)]
+        (println (describe-disk (str "  " letter) disk)))))
+  (when (seq internal-disks)
+    (println "\nInternal disks (never written):")
+    (doseq [disk internal-disks]
+      (println (describe-disk "" disk)))))
+
+(defn prompt-disk!
+  "Return the removable disk that the operator picks, or nil to write nothing."
+  [removable]
+  (when (seq removable)
+    (loop []
+      (print (str "\nPick a disk to flash [" (first (letters 1)) "-"
+                  (last (letters (count removable))) "], or q to quit: "))
+      (flush)
+      (let [line (some-> (read-line) str/trim str/lower-case)]
+        (cond
+          (or (nil? line) (= "q" line)) nil
+          (pick line removable) (pick line removable)
+          :else (do (println "Not a listed choice.") (recur)))))))
+
+(defn write!
+  "Unmount the disk, write the image to its raw device, and eject it.
+
+   xz reads the image as a file, so --verbose knows its size and paints a live
+   progress indicator, and dd throttling the pipe makes that indicator track the
+   real write rate rather than the speed of decompression alone."
+  [{:keys [node raw-node name size]} image]
+  (println (str "\nErasing " node " (" name ", " (format-size size) ") with " (fs/file-name (fs/path image))))
+  (stream! ["diskutil" "unmountDisk" node] (str "cannot unmount " node))
+  (stream! ["bash" "-c" "set -o pipefail; xz --decompress --stdout --verbose \"$1\" | sudo dd of=\"$2\" bs=1m"
+            "bash" image raw-node]
+           (str "cannot write the image to " node))
+  (stream! ["diskutil" "eject" node] (str "cannot eject " node))
+  (println "Done. The card is safe to remove.")
+  op/exit-ok)
+
+;;; Small shells
+
+(defn json!
+  "Run one diskutil command, turn its property list into JSON, and parse it.
+
+   plutil ships with macOS, so a JSON conversion needs no dependency and the
+   result parses without a property-list reader."
+  [command message]
+  (let [{:keys [exit out err]} @(process/process
+                                 ["bash" "-c" (str command " | plutil -convert json -o - -")]
+                                 {:out :string :err :string})]
+    (when-not (zero? exit)
+      (fail! (str message (when-let [text (not-empty (str/trim (str err out)))] (str ": " text)))))
+    (json/parse-string out true)))
+
+(defn stream!
+  "Run one command with its streams attached, and fail on a nonzero status.
+
+   dd needs sudo and dd needs the terminal, so the write inherits the streams
+   rather than capturing them."
+  [argv message]
+  (let [{:keys [exit]} @(process/process argv {:out :inherit :err :inherit :in :inherit})]
+    (when-not (zero? exit)
+      (fail! (str message ": exit status " exit)))))
+
+(defn sha-256-file
+  "Return the SHA-256 of one file as lower-case hexadecimal.
+
+   An image is larger than memory holds in one piece, so the digest reads it in
+   blocks."
+  [path]
+  (let [digest (java.security.MessageDigest/getInstance "SHA-256")
+        buffer (byte-array 65536)]
+    (with-open [input (io/input-stream (fs/file path))]
+      (loop []
+        (let [read (.read input buffer)]
+          (when (pos? read)
+            (.update digest buffer 0 read)
+            (recur)))))
+    (apply str (map #(format "%02x" (bit-and % 0xff)) (.digest digest)))))
+
+(defn fail!
+  "Stop the command with one diagnostic that names its repair."
+  ([message] (fail! message op/exit-failure))
+  ([message status] (throw (ex-info message {:status status}))))
+
+(defn fatal
+  "Report one diagnostic on standard error and return an exit status."
+  [message status]
+  (binding [*out* *err*]
+    (doseq [line (str/split-lines message)] (println (str "flash: " line))))
+  status)
