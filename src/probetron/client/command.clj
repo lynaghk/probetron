@@ -73,12 +73,29 @@
   [operation]
   (str/join " " (map shell-token (remote-argv operation))))
 
+(def mux-options
+  "How the short operations reuse one authenticated connection.
+
+   Every short operation is its own SSH invocation, so a flurry of them would
+   otherwise open, authenticate, and tear down one connection each, and a burst
+   of half-open connections is what stalls the rig's login. ControlMaster shares
+   one connection instead: the first operation opens it, the next reuse it, and
+   ControlPersist keeps it a little longer so a sequence pays the handshake once.
+   The socket lives under the local user alone, keyed by a hash of the
+   destination, so two rigs and two users never share one path.
+   Only the short operations carry this: a long session already owns one
+   connection for its whole life, and its lock rides on that connection ending."
+  ["-o" "ControlMaster=auto"
+   "-o" "ControlPath=/tmp/probetron-mux-%i-%C"
+   "-o" "ControlPersist=30"])
+
 (defn ssh-argv
   "Return the argv of one SSH invocation without a TTY.
 
    The request is {:ssh executable :key path :host host}, and the extra options
-   carry whatever one long session forwards."
-  ([request remote-command] (ssh-argv request [] remote-command))
+   carry whatever one long session forwards. A short operation reuses one shared
+   connection, while a long session forwards over its own."
+  ([request remote-command] (ssh-argv request mux-options remote-command))
   ([{:keys [ssh key host]} extra remote-command]
    (-> [ssh "-i" key "-T"]
        (into ssh-options)

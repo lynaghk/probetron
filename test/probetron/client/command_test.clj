@@ -58,6 +58,9 @@
           "-o" "UserKnownHostsFile=/dev/null"
           "-o" "GlobalKnownHostsFile=/dev/null"
           "-o" "LogLevel=ERROR"
+          "-o" "ControlMaster=auto"
+          "-o" "ControlPath=/tmp/probetron-mux-%i-%C"
+          "-o" "ControlPersist=30"
           "probetron@pi.lab"
           "sudo -n /usr/local/sbin/probetron-rig reset"]
          (ssh-argv "pi.lab")))
