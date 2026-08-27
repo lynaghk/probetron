@@ -118,7 +118,7 @@ ssh -i /tmp/probetron_key -T \
   probetron@probetron 'udevadm info --attribute-walk --name=/dev/ttyACM0 | grep -m5 KERNELS'
 ```
 
-Record the nearest `KERNELS` value as `:usb-kernels` in `image/pins.edn`, for example `"1-1.3"`, and describe the socket in `:usb-port-label`, for example `"lower USB 2.0 receptacle nearest the Ethernet jack"`.
+Record the nearest `KERNELS` value as `:usb-kernels` in `image/manifest.edn`, for example `"1-1.3"`, and describe the socket in `:usb-port-label`, for example `"lower USB 2.0 receptacle nearest the Ethernet jack"`.
 Build and write the card again, and a board in any other receptacle then stops being the DUT.
 Nothing defaults that receptacle, because a guessed one would quietly make some other socket the DUT.
 
@@ -152,7 +152,7 @@ The image removes the serial console from the kernel command line and masks the 
 The DUT USB cable goes into any receptacle of the Pi, and the image turns the DUT into `/dev/probetron-dut`.
 That udev rule matches the CDC tty class, and never a vendor ID, a product ID, or a serial descriptor, because those belong to the firmware: a DUT reflashed with a different USB identity would otherwise stop matching at the worst moment.
 A rig owns one DUT and runs no console, so the one CDC serial device it can see is that DUT, and neither a board in BOOTSEL nor a USB-serial adapter matches the rule.
-A bench that really does present a second CDC device records a receptacle in `image/pins.edn`, and the rule then narrows to that physical socket, so a board anywhere else is not the DUT.
+A bench that really does present a second CDC device records a receptacle in `image/manifest.edn`, and the rule then narrows to that physical socket, so a board anywhere else is not the DUT.
 `--channel usb` needs that cable only when the firmware exposes native USB CDC; SWD, RTT, and DAP all work without it.
 
 ## Target boards
@@ -746,7 +746,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 | `/run/probetron` | 256 MiB tmpfs, which carries the target lock, the active record, and the one 64 MiB upload |
 | journal          | volatile, at most 32 MiB of `/run`                                                         |
 
-`image/pins.edn` is the only file in the project that names a revision, an archive, or a digest.
+`image/manifest.edn` is the only file in the project that names a revision, an archive, or a digest.
 
 | Pin            | Value                                                                                            |
 | -------------- | ------------------------------------------------------------------------------------------------ |
@@ -759,7 +759,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 The build spends nothing before it knows it can finish: the platform gate, the GLIBC check, the pinned checkout, and rpi-image-gen's own validation all run before one byte is fetched, one key is generated, or one image is constructed.
 The staging step then verifies every pinned archive against its digest before use, so a mirror that answers with something else stops the build rather than the appliance.
 
-probe-rs 0.32 is the initial pin, and a later pin belongs in `pins.edn` only once hardware qualification records that probe-rs identifies an RP2350 over this SWD wiring.
+probe-rs 0.32 is the initial pin, and a later pin belongs in `manifest.edn` only once hardware qualification records that probe-rs identifies an RP2350 over this SWD wiring.
 
 ## Security model
 
@@ -797,7 +797,7 @@ The recovery from all of them is the same: reboot the rig, and the volatile lock
 | firmware flashes but never starts                                | RUN is not wired, so only a verified download and no reset reached the DUT                              | wire pin 37 to RUN; `probetron reset` must restart the firmware on its own                                                                                               |
 | `missing UART device /dev/ttyAMA0`                               | UART0 is off, or the serial console still owns it                                                       | check `enable_uart=1` and `dtoverlay=disable-bt` in `config.txt`, confirm no `console=serial0` in `cmdline.txt`, and confirm `serial-getty@ttyAMA0` is masked            |
 | UART bytes are missing or garbled                                | the bit rate, the wire pairing, or a missing ground                                                     | match `--baud` to the firmware, cross TX and RX as the table shows, and share ground on pin 6                                                                            |
-| `missing DUT USB device /dev/probetron-dut`                      | the firmware exposes no CDC, the board sits in BOOTSEL, or a recorded topology in `pins.edn` is stale   | confirm the firmware enumerates, leave BOOTSEL, and re-run the USB topology check below if `pins.edn` names a receptacle                                                 |
+| `missing DUT USB device /dev/probetron-dut`                      | the firmware exposes no CDC, the board sits in BOOTSEL, or a recorded topology in `manifest.edn` is stale   | confirm the firmware enumerates, leave BOOTSEL, and re-run the USB topology check below if `manifest.edn` names a receptacle                                                 |
 | `cannot find socat on this client`                               | the client has no socat, so `--pty` has no pseudo-terminal                                              | `brew install socat` or `apt install socat`; the session and its TCP endpoint keep working meanwhile                                                                     |
 | `cannot fetch the rig key from http://<host>/probetron_key`      | the rig is unreachable, or the key service is down                                                      | ping the address, check the wired LAN and the DHCP reservation, and check `probetron-key.service` on the rig                                                             |
 | `the cached rig key ... has unsafe permissions`                  | something widened the cache file                                                                        | `chmod 600` that file or remove it; the next operation fetches the key again                                                                                             |
@@ -814,7 +814,7 @@ The recovery from all of them is the same: reboot the rig, and the volatile lock
 
 Nothing below is optional for a new bench, and every step records what it measured.
 Every `ssh probetron@<host>` command below is the raw SSH path of the previous section, with `-i /tmp/probetron_key` and the same options.
-When a measurement differs from what this document or `image/pins.edn` states, change the pin or the documentation.
+When a measurement differs from what this document or `image/manifest.edn` states, change the pin or the documentation.
 A discrepancy that hides behind runtime inventory is a defect, because the rig deliberately owns no inventory.
 
 1. **Identify the target.** Wire SWD as the table above says, then run `probetron info --host <host>`. The `target:` block must show the debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`. Record the exact chip name that `ssh probetron@<host> 'probe-rs chip list' | grep -i rp2` prints, and correct every `--chip RP2350` example here if it differs.
@@ -840,7 +840,7 @@ A discrepancy that hides behind runtime inventory is a defect, because the rig d
    ssh probetron@<host> 'udevadm info --name=/dev/probetron-dut | head'
    ```
 
-   `/dev/probetron-dut` must resolve to the CDC tty of the DUT. Where `image/pins.edn` records a receptacle, the `KERNELS` ancestry must equal `:usb-kernels`, a board in any other receptacle must not resolve, and the pins want an update whenever the receptacle, the cable, or the Pi changes. Where it records none, any second CDC device on the rig makes the slot ambiguous, which is the measurement that decides whether this bench needs a receptacle recorded at all.
+   `/dev/probetron-dut` must resolve to the CDC tty of the DUT. Where `image/manifest.edn` records a receptacle, the `KERNELS` ancestry must equal `:usb-kernels`, a board in any other receptacle must not resolve, and the pins want an update whenever the receptacle, the cable, or the Pi changes. Where it records none, any second CDC device on the rig makes the slot ambiguous, which is the measurement that decides whether this bench needs a receptacle recorded at all.
 
 6. **Record the versions that DAP needs.** Note `probe-rs:` from `probetron info`, the editor version, and the probe-rs extension version. Open `probetron debug --host <host>`, connect the editor, hit a breakpoint, disconnect, and connect again twice. The lock must stay held (`probetron status` reports `debug`), the DUT must keep its state, and no reset may happen. Correct the editor example above, including how `programBinary` resolves, when the tested versions behave differently, and record the versions that were tested.
 7. **Re-run the whole operation set.** `probetron flash`, `probetron erase`, `probetron reset`, `probetron connect --channel uart`, `probetron connect --channel usb`, `--pty` on both macOS and Linux, `--rtt` beside a bridge, and `probetron debug` must each succeed once. RTT text must arrive on the client terminal while the bridge still carries DUT bytes.
@@ -904,7 +904,7 @@ A release archive carries every source file except `provisioning/`, because a cl
 | `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive    |
 | `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                  |
 | `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                    |
-| `image/pins.edn`                         | every pinned revision, archive, and digest of the rig image        |
+| `image/manifest.edn`                         | every pinned revision, archive, and digest of the rig image        |
 | `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance               |
 | `image/layer/`                           | the seven named appliance layers and their `.rootfs-overlay/` trees |
 | `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                |

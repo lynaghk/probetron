@@ -6,7 +6,7 @@
    configuration and layer validation all run before one byte is downloaded,
    one key is generated, or one image is constructed.
    `--validate-only` stops right after that validation.
-   Everything below `main!` is either a pure reading of image/pins.edn or the
+   Everything below `main!` is either a pure reading of image/manifest.edn or the
    imperative shell that owns files, subprocesses, and the network."
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
@@ -18,7 +18,7 @@
             [probetron.provisioning.package :as package]
             [probetron.version :as version]))
 
-(declare usage build! validate! checked-pins! read-pins! check-host! check-glibc! checkout!
+(declare usage build! validate! checked-manifest! read-manifest! check-host! check-glibc! checkout!
          report-topology! require-privilege! prepare-work! temporary-directory work-directory
          space-state gibibytes stage! generate-image! publish! report
          layer-files pipeline-layers canonical-env overrides ig-program dependency-state
@@ -37,9 +37,9 @@
        first
        str))
 
-(def pins-file
+(def manifest-file
   "The only file that states a pinned revision, archive, or checksum."
-  "image/pins.edn")
+  "image/manifest.edn")
 
 (def source-root
   "The rpi-image-gen source tree of Probetron: image/config and image/layer."
@@ -94,19 +94,19 @@
 (defn build!
   "Run the whole build, or stop after validation, and return an exit status."
   [{:keys [validate-only overrides]}]
-  (let [pins (checked-pins!)
-        checkout (checkout! pins)]
-    (validate! pins checkout)
+  (let [manifest (checked-manifest!)
+        checkout (checkout! manifest)]
+    (validate! manifest checkout)
     (println validation-message)
     (if validate-only
       op/exit-ok
       (do
-        (report-topology! pins)
+        (report-topology! manifest)
         (require-privilege!)
         (let [work (prepare-work!)
-              staged (stage! pins)
-              raw (generate-image! pins checkout staged work overrides)]
-          (println (report (publish! pins raw)))
+              staged (stage! manifest)
+              raw (generate-image! manifest checkout staged work overrides)]
+          (println (report (publish! manifest raw)))
           op/exit-ok)))))
 
 (defn usage
@@ -121,24 +121,24 @@
     "  --validate-only  Check the image configuration and its layers, then stop."
     "  key=value        One rpi-image-gen variable override, passed through."
     ""
-    (str "Every pinned input lives in " pins-file ".")
+    (str "Every pinned input lives in " manifest-file ".")
     (str "The build works in " (work-directory (temporary-directory)) ", which TMPDIR moves,"
          " and needs " (gibibytes required-space) " of free space there.")
     (str "A finished build writes the compressed image and its checksum under " build-directory "/.")]))
 
-;;; Pins
+;;; Manifest
 
-(defn checked-pins!
+(defn checked-manifest!
   "Return the pinned inputs, and fail before any download unless this host can build them."
   []
-  (doto (read-pins!)
+  (doto (read-manifest!)
     check-host!
     check-glibc!))
 
-(defn read-pins!
+(defn read-manifest!
   "Return the pinned inputs of the image, or fail when nobody recorded them."
   []
-  (let [file (fs/path project-root pins-file)]
+  (let [file (fs/path project-root manifest-file)]
     (when-not (fs/regular-file? file)
       (fail! (str "cannot read " file ": run the image build from the Probetron project directory")))
     (edn/read-string (slurp (fs/file file)))))
@@ -150,8 +150,8 @@
 
    rpi-image-gen supports native Debian arm64 alone, and the pinned probe-rs
    binary is an aarch64 GNU binary, so no other host can produce this image."
-  [pins]
-  (let [{:keys [id version-id machine]} (:host pins)
+  [manifest]
+  (let [{:keys [id version-id machine]} (:host manifest)
         release (os-release)
         found (str/trim (capture! {} ["uname" "-m"] "cannot read the machine type"))]
     (when-not (and (= id (get release "ID")) (= version-id (get release "VERSION_ID")))
@@ -164,13 +164,13 @@
 
 (defn check-glibc!
   "Fail unless the pinned base satisfies the GLIBC that pinned probe-rs needs."
-  [pins]
+  [manifest]
   (let [version #(mapv parse-long (str/split % #"\."))
-        base (get-in pins [:suite :glibc])
-        needed (get-in pins [:probe-rs :glibc])]
+        base (get-in manifest [:suite :glibc])
+        needed (get-in manifest [:probe-rs :glibc])]
     (when (neg? (compare (version base) (version needed)))
       (fail! (str "the pinned base carries GLIBC " base " and the pinned probe-rs needs GLIBC "
-                  needed ": pin a newer base or an older probe-rs in " pins-file)))))
+                  needed ": pin a newer base or an older probe-rs in " manifest-file)))))
 
 (defn checkout!
   "Return the pinned rpi-image-gen checkout, cloning or moving it only if needed.
@@ -178,9 +178,9 @@
    The checkout is an ordinary ignored clone under the cache directory and not
    a submodule of the repository, and a checkout already at the pinned revision
    needs no network at all."
-  [pins]
-  (let [{:keys [url revision tag]} (:rpi-image-gen pins)
-        directory (fs/path project-root (get-in pins [:rpi-image-gen :checkout]))
+  [manifest]
+  (let [{:keys [url revision tag]} (:rpi-image-gen manifest)
+        directory (fs/path project-root (get-in manifest [:rpi-image-gen :checkout]))
         git (fn [message & argv] (capture! {} (into ["git" "-C" (str directory)] argv) message))]
     (when-not (fs/directory? (fs/path directory ".git"))
       (fs/create-dirs (fs/parent directory))
@@ -199,7 +199,7 @@
 
    Nothing here writes to the project, opens the network, or needs privilege,
    so it is both the --validate-only check and the first step of a real build."
-  [pins checkout]
+  [manifest checkout]
   (let [ig (ig-program checkout)
         work (fs/create-temp-dir {:prefix "probetron-image-validate"})
         dynamic (fs/path work "dynamic")
@@ -207,7 +207,7 @@
                                            (str (fs/path checkout "bin" "generators"))
                                            (System/getenv "PATH")])
                      "DYNROOT" (str dynamic)
-                     "SOURCE_DATE_EPOCH" (str (get-in pins [:suite :snapshot-epoch]))}
+                     "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}
         registry (fs/path work "registry.env")
         user (fs/path work "user.env")
         settings (fs/path work "config.env")]
@@ -292,10 +292,10 @@
    the ordinary state: the rule then matches the one CDC serial device that the
    rig can see. A bench that really does present a second one records the
    receptacle and narrows the rule to that physical socket."
-  [pins]
-  (when (str/blank? (get-in pins [:dut :usb-kernels]))
+  [manifest]
+  (when (str/blank? (get-in manifest [:dut :usb-kernels]))
     (binding [*out* *err*]
-      (println (str "image: no receptacle recorded in " pins-file
+      (println (str "image: no receptacle recorded in " manifest-file
                     ", so any CDC serial device is the DUT"))
       (println (str "image: to narrow the rule to one physical socket, boot this image,"
                     " plug the DUT in, read"
@@ -359,7 +359,7 @@
 
    Every artefact arrives on the build host and nothing is ever fetched from the
    target image, at first boot or later."
-  [pins]
+  [manifest]
   (let [stage (fs/path project-root cache-directory "stage")
         keys-directory (fs/path stage "keys")
         rig-key (fs/path keys-directory "probetron_key")
@@ -373,8 +373,8 @@
                   (str "probetron-" version/probetron-version) "-f" (str rig-key)]
               "cannot generate the image SSH keypair: install openssh-client")
     {:release (str (:archive release))
-     :babashka (str (extract! pins :babashka))
-     :probe-rs (str (extract! pins :probe-rs))
+     :babashka (str (extract! manifest :babashka))
+     :probe-rs (str (extract! manifest :probe-rs))
      :rig-key (str rig-key)
      :authorized-key (str rig-key ".pub")}))
 
@@ -383,8 +383,8 @@
 
    An archive that is already in the cache with the pinned digest needs no
    request, and a digest that does not match stops the build before use."
-  [pins key]
-  (let [{:keys [url sha256 member]} (get pins key)
+  [manifest key]
+  (let [{:keys [url sha256 member]} (get manifest key)
         downloads (fs/path project-root cache-directory "downloads")
         archive (fs/path downloads (fs/file-name url))
         unpacked (fs/path project-root cache-directory "stage" (fs/file-name member))]
@@ -393,7 +393,7 @@
       (download! url archive))
     (let [found (sha-256-file archive)]
       (when-not (= sha256 found)
-        (fail! (str "the archive " url " has digest " found " and " pins-file " pins " sha256
+        (fail! (str "the archive " url " has digest " found " and " manifest-file " records " sha256
                     ": pin the digest that the release publishes, or fetch the archive again"))))
     (fs/create-dirs (fs/parent unpacked))
     ;; The unpacked member and its temporary neighbour share one filesystem, so
@@ -421,19 +421,19 @@
 
 (defn generate-image!
   "Run the pinned image generator and return the raw image that it wrote."
-  [pins checkout staged work extra]
-  (let [name (get-in pins [:device :image-name])
+  [manifest checkout staged work extra]
+  (let [name (get-in manifest [:device :image-name])
         image (fs/path work (str "image-" name) (str name ".img"))]
     (fs/create-dirs work)
     (fs/delete-if-exists image)
     (try
-      (stream! {:extra-env {"SOURCE_DATE_EPOCH" (str (get-in pins [:suite :snapshot-epoch]))}}
+      (stream! {:extra-env {"SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
                (into [(str (fs/path checkout "rpi-image-gen")) "build"
                       "-S" (str (fs/path project-root source-root))
                       "-c" config-file
                       "-B" (str work)
                       "--"]
-                     (into (overrides pins staged) extra))
+                     (into (overrides manifest staged) extra))
                "the image build failed")
       (catch clojure.lang.ExceptionInfo exception
         (fail! (cond-> (ex-message exception)
@@ -445,23 +445,23 @@
 
 (defn overrides
   "Return every variable that the layers read but the configuration cannot state."
-  [pins staged]
+  [manifest staged]
   [(str "IGconf_artefact_version=" version/probetron-version)
    (str "IGconf_ssh_pubkey_user1=" (:authorized-key staged))
    (str "IGconf_probetron_release=" (:release staged))
    (str "IGconf_probetron_babashka=" (:babashka staged))
    (str "IGconf_probetron_probe_rs=" (:probe-rs staged))
    (str "IGconf_probetron_rig_key=" (:rig-key staged))
-   (str "IGconf_probetron_usb_port_label=" (get-in pins [:dut :usb-port-label]))
-   (str "IGconf_probetron_usb_kernels=" (get-in pins [:dut :usb-kernels]))])
+   (str "IGconf_probetron_usb_port_label=" (get-in manifest [:dut :usb-port-label]))
+   (str "IGconf_probetron_usb_kernels=" (get-in manifest [:dut :usb-kernels]))])
 
 (defn publish!
   "Compress the raw image under the build directory and record its digest.
 
    Both outputs arrive through a temporary neighbour and one rename each, so an
    interrupted build replaces neither a valid image nor a valid checksum."
-  [pins image]
-  (let [name (str (get-in pins [:device :image-name]) ".img.xz")
+  [manifest image]
+  (let [name (str (get-in manifest [:device :image-name]) ".img.xz")
         directory (fs/path project-root build-directory)
         compressed (fs/path directory name)
         checksum (fs/path directory (str name ".sha256"))
