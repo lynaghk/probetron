@@ -12,14 +12,16 @@
    Cleanup stops the local helpers alone, because only the rig ever touches
    the DUT: --reset-on-exit travels to the rig and never becomes a client
    action."
-  (:require [probetron.client.command :as command]
+  (:require [babashka.fs :as fs]
+            [probetron.client.command :as command]
             [probetron.client.key :as rig-key]
             [probetron.client.session :as session]
             [probetron.operation :as op])
-  (:import (java.util.concurrent TimeUnit)))
+  (:import (java.io DataOutputStream OutputStream)
+           (java.util.concurrent TimeUnit)))
 
-(declare hold! start-ssh! start-pty! watch-pty! await-session! session-port rig-port
-         register-cleanup! clean-up! stop-process! refuse-pty!)
+(declare hold! start-ssh! send-framed-elf! start-pty! watch-pty! await-session! session-port
+         rig-port register-cleanup! clean-up! stop-process! refuse-pty!)
 
 (def operations
   "The client operations that hold the rig target until the client lets go."
@@ -63,11 +65,30 @@
    decoded RTT text reach the operator unchanged, while an optional RTT ELF
    travels the other way on standard input."
   [operation key-path port {:keys [executables spawn!]}]
-  (spawn! (command/session-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
-                                port
-                                (rig-port operation)
-                                (command/remote-command operation))
-          {:in (session/upload operation) :out :inherit :err :inherit}))
+  ;; Standard input stays open for the whole session and carries nothing but the
+  ;; optional upload, so the rig sees end of input exactly when this client dies
+  ;; — however it dies — and releases the target then. An upload is framed with
+  ;; its length rather than closing the stream, so the tether outlives it.
+  (let [ssh (spawn! (command/session-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
+                                          port
+                                          (rig-port operation)
+                                          (command/remote-command operation))
+                    {:in :stream :out :inherit :err :inherit})]
+    (when-let [elf (op/stdin-elf operation)]
+      (send-framed-elf! (:in ssh) elf))
+    ssh))
+
+(defn send-framed-elf!
+  "Write one ELF to the open SSH standard input, framed by a four-byte length.
+
+   The stream stays open afterward, so the same standard input the rig read the
+   ELF from goes on serving as the client tether."
+  [out elf-path]
+  (let [bytes (fs/read-all-bytes elf-path)
+        framed (DataOutputStream. ^OutputStream out)]
+    (.writeInt framed (alength ^bytes bytes))
+    (.write framed ^bytes bytes)
+    (.flush framed)))
 
 (defn start-pty!
   "Present the forwarded endpoint as a pseudo-terminal, or say why the client cannot.

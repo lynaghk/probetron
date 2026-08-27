@@ -12,16 +12,21 @@
    reaches the handled signal path."
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
-            [clojure.java.io :as io]
             [clojure.string :as str]
             [probetron.rig.runner :as runner]
             [probetron.rig.session :as session]
-            [probetron.stand-in :as stand-in])
-  (:import (java.io ByteArrayInputStream)))
+            [probetron.stand-in :as stand-in]))
 
 (declare appliance! create-appliance! write-listener! listener-source device-names upload-stream
          spawn-adapter helper-name stand-in-command record-reset! release! released? stop-all!
-         recorded-pid)
+         recorded-pid close-upload! upload-bytes)
+
+;; One memoized standard-input pipe per session under test, by directory. The
+;; receive and the tether read the same pipe, exactly as production's System/in
+;; is one stream; a pre-written length-framed ELF stands in for an upload, and
+;; the pipe then blocks — standing in for the client holding standard input open
+;; — until a test closes it, which stands in for the client's departure.
+(defonce upload-streams (atom {}))
 
 (def helper-names
   "The stand-ins that replace the owned children of each long session."
@@ -111,10 +116,32 @@
 (defn upload-stream
   "Return the standard input that carries one upload into the session."
   [directory stdin]
+  (or (get-in @upload-streams [directory :in])
+      (let [out (java.io.PipedOutputStream.)
+            in (java.io.PipedInputStream. out (* 1024 1024))]
+        (when-let [bytes (upload-bytes directory stdin)]
+          (doto (java.io.DataOutputStream. out)
+            (.writeInt (alength ^bytes bytes))
+            (.write ^bytes bytes)
+            (.flush)))
+        (swap! upload-streams assoc directory {:in in :out out})
+        in)))
+
+(defn upload-bytes
+  "Return the ELF bytes a session uploads, or nil when it uploads nothing."
+  [directory stdin]
   (cond
-    (= :file stdin) (io/input-stream (fs/file (fs/path directory "rtt.elf")))
-    (bytes? stdin) (ByteArrayInputStream. ^bytes stdin)
-    :else (ByteArrayInputStream. (byte-array 0))))
+    (= :file stdin) (fs/read-all-bytes (fs/file (fs/path directory "rtt.elf")))
+    (bytes? stdin) stdin
+    :else nil))
+
+(defn close-upload!
+  "Close the held-open standard input a session read, standing in for the client
+   leaving, if a session opened one."
+  [directory]
+  (when-let [{:keys [out]} (get @upload-streams directory)]
+    (swap! upload-streams dissoc directory)
+    (try (.close ^java.io.PipedOutputStream out) (catch Exception _ nil))))
 
 (defn spawn-adapter
   "Return a spawn function that records every owned helper and runs a stand-in for it.
@@ -184,6 +211,7 @@
 (defn stop-all!
   "Make sure no stand-in survives a test, even one that never cleaned up."
   [directory]
+  (close-upload! directory)
   (doseq [name (mapcat val helper-names)]
     (when-let [pid (recorded-pid directory name)]
       (stand-in/signal! "-KILL" pid))))

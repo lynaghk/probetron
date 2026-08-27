@@ -19,7 +19,7 @@
 
 (declare default-runtime default-paths default-executables default-filesystem default-hardware
          own-target! report-status! probe-lock acquire-lock! handshake! release-lock!
-         register-cleanup! watch-session! launching-parent launching-anchor-pid session-present?
+         register-cleanup! watch-stdin!
          session start-helper! clean-up! stop-groups! signal-group! await-exit! run-reset!
          write-active! read-owner! delete-active! write-atomically! glob-paths report-busy!
          fail! warn!)
@@ -31,10 +31,6 @@
 (def reap-grace-ms
   "How long the shell waits for a signalled process to disappear."
   1000)
-
-(def session-poll-ms
-  "How often the shell checks that the launching session is still there."
-  500)
 
 (defn execute!
   "Carry out one validated rig operation and return its exit status.
@@ -70,7 +66,6 @@
         (try
           (write-active! runtime (lifecycle/active-metadata operation (pid) (clock)))
           (register-cleanup! state runtime)
-          (watch-session! state runtime)
           (perform operation (session state runtime))
           (catch Exception exception
             (warn! (or (ex-message exception) (str exception)))
@@ -86,22 +81,29 @@
   [state runtime]
   (.addShutdownHook (Runtime/getRuntime) (Thread. ^Runnable #(clean-up! state runtime))))
 
-(defn watch-session!
-  "Release the target when the launching session goes away, signal or not.
+(defn watch-stdin!
+  "Release the target the instant the client's held-open standard input closes.
 
-   sudo runs the rig command inside its own pseudo-terminal, so the SIGHUP that
-   sshd sends when a client disconnects does not always reach it, and a lost
-   session can orphan the operation and strand the lock. A watcher notices the
-   launching process going away and runs the same cleanup a signal would, so a
-   dropped or hard-killed client frees the bench within one poll interval."
-  [state {:keys [session-alive?] :as runtime}]
-  (future
-    (loop []
-      (Thread/sleep session-poll-ms)
-      (cond
-        (:cleaned? @state) nil
-        (not (session-alive?)) (clean-up! state runtime)
-        :else (recur)))))
+   Every long session holds the client's standard input open for as long as the
+   client lives: a plain session sends nothing on it, and one with an upload
+   frames the upload so the rest of the stream stays open (see
+   `target/receive-session-elf!`). A read here therefore blocks until end of
+   input, and end of input means the client is gone — a clean exit, a crash, or
+   a hard kill that orphaned its SSH forward but closed the pipe the JVM held.
+   Whatever the cause, the rig runs the same cleanup a signal would.
+
+   The session starts this after it has read any upload, so the read draws only
+   the tether that follows it. It runs on a daemon thread, so a session that
+   ended another way never keeps the rig from exiting."
+  [state {:keys [stdin] :as runtime}]
+  (let [in ^InputStream (stdin)
+        watch (fn []
+                (try (loop [] (when (<= 0 (.read in)) (recur)))
+                     (catch IOException _ nil))
+                (clean-up! state runtime))
+        thread (doto (Thread. ^Runnable watch "probetron-stdin-tether")
+                 (.setDaemon true))]
+    (.start thread)))
 
 (defn session
   "Return the handle that one operation uses to start owned helpers.
@@ -112,6 +114,9 @@
   [state runtime]
   {:runtime runtime
    :start-helper! (fn [argv opts] (start-helper! state runtime argv opts))
+   ;; A session starts the client tether once it has read any upload, so the
+   ;; tether reads only the standard input that outlives the upload.
+   :watch-client! (fn [] (watch-stdin! state runtime))
    :stopping? (fn [] (true? (:cleaned? @state)))})
 
 (defn start-helper!
@@ -127,12 +132,21 @@
    It runs once, whether the operation finished, the client disconnected, or a
    handled signal arrived, and the default path leaves the target alone."
   [state runtime]
-  (let [[before] (swap-vals! state assoc :cleaned? true)]
-    (when-not (:cleaned? before)
-      (stop-groups! (:groups before) runtime)
-      (when (:reset-on-exit? before) (run-reset! runtime))
-      (delete-active! runtime)
-      (release-lock! (:holder before)))))
+  (let [mine (promise)
+        [before] (swap-vals! state
+                             (fn [s] (if (:cleaned? s)
+                                       s
+                                       (assoc s :cleaned? true :cleanup-done mine))))]
+    (if (:cleaned? before)
+      ;; Another caller owns the cleanup; wait for it to finish before returning,
+      ;; so the lock is really back by the time any caller leaves.
+      (some-> (:cleanup-done before) deref)
+      (try
+        (stop-groups! (:groups before) runtime)
+        (when (:reset-on-exit? before) (run-reset! runtime))
+        (delete-active! runtime)
+        (release-lock! (:holder before))
+        (finally (deliver mine true))))))
 
 (defn stop-groups!
   "Terminate and then forcibly reap only the process groups this operation owns.
@@ -298,38 +312,6 @@
    :write-file! #'write-atomically!
    :delete-file! fs/delete-if-exists})
 
-(def launching-parent
-  "The sudo that started this rig program, held so a lost session is visible.
-
-   sudo survives a client disconnect instead of passing on the SIGHUP, so its
-   own liveness says nothing; what dies is the SSH session process above it."
-  (.orElse (.parent (java.lang.ProcessHandle/current)) nil))
-
-(def launching-anchor-pid
-  "The pid of the SSH session process above sudo, captured at startup.
-
-   sshd runs one operation per SSH invocation, so this is the client's own
-   channel. When the client disconnects, sshd ends it and sudo reparents to
-   init, so a change here is the signal that the session is gone even though
-   sudo, and this program under it, live on."
-  (when launching-parent
-    (let [grandparent (.parent ^java.lang.ProcessHandle launching-parent)]
-      (when (.isPresent grandparent) (.pid (.get grandparent))))))
-
-(defn session-present?
-  "Tell whether the SSH session that launched this operation is still there.
-
-   The anchor is the SSH session process above sudo. It is gone once sudo dies
-   or reparents away from it, and an unknown anchor cannot be judged, so it
-   counts as present rather than reaping a session the shell cannot see."
-  [parent anchor-pid]
-  (cond
-    (nil? parent) true
-    (not (.isAlive ^java.lang.ProcessHandle parent)) false
-    (nil? anchor-pid) true
-    :else (let [grandparent (.parent ^java.lang.ProcessHandle parent)]
-            (and (.isPresent grandparent) (= anchor-pid (.pid (.get grandparent)))))))
-
 (def default-runtime
   "The production wiring of the clock, the current process, and subprocesses."
   {:paths default-paths
@@ -338,7 +320,6 @@
    :hardware default-hardware
    :clock (fn [] (java.time.Instant/now))
    :pid (fn [] (.pid (java.lang.ProcessHandle/current)))
-   :session-alive? (fn [] (session-present? launching-parent launching-anchor-pid))
    :stdin (fn [] System/in)
    :spawn! process/process
    :run! (fn [argv opts]

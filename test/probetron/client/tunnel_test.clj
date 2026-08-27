@@ -52,8 +52,13 @@
     (with-session! (assoc uart-connect :rtt {:elf elf :chip "RP235x" :speed-khz 2000})
       {:client client}
       (fn [{:keys [calls]}]
-        (is (= (seq (fs/read-all-bytes elf)) (seq (fixture/recorded-stdin client)))
-            "the rig reads the RTT ELF on standard input")
+        (let [elf-bytes (vec (fs/read-all-bytes elf))
+              captured (vec (fixture/recorded-stdin client))]
+          (is (= elf-bytes (subvec captured 4))
+              "the rig reads the RTT ELF on standard input, after its length frame")
+          (is (= (count elf-bytes)
+                 (.getInt (java.nio.ByteBuffer/wrap (byte-array (subvec captured 0 4)))))
+              "the ELF is framed by a four-byte big-endian length"))
         (is (= (str "sudo -n /usr/local/sbin/probetron-rig connect --channel uart --baud 115200"
                     " --rtt --chip RP235x --speed-khz 2000")
                (fixture/remote-command client)))

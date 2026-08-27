@@ -17,7 +17,8 @@
   (:import (java.io InputStream OutputStream)))
 
 (declare report-information! flash! erase! pulse-reset!
-         capture! upload-path receive-elf! with-upload! copy-bounded! missing-status refuse!)
+         capture! upload-path receive-elf! receive-session-elf! read-uint32! with-upload!
+         copy-bounded! elf-refusal oversize-message missing-status refuse!)
 
 (defn perform!
   "Carry out one short operation that already owns the target."
@@ -95,18 +96,55 @@
     (str (fs/path directory (str "upload-" (random-uuid) ".elf")))))
 
 (defn receive-elf!
-  "Read the uploaded ELF from standard input into the volatile file it owns.
+  "Read a short operation's ELF from standard input, delimited by end of input.
 
-   It stops one byte past the limit, so an oversized upload never fills the
-   volatile filesystem, and it returns the reason it refuses an upload, or nil."
+   A short operation reads its upload to end of input and then ends, so it needs
+   no more of standard input and lets the client close it. It stops one byte
+   past the limit, so an oversized upload never fills the volatile filesystem,
+   and it returns the reason it refuses an upload, or nil."
   [{:keys [hardware stdin]} path]
   (let [limit (:max-elf-bytes hardware)
         size (copy-bounded! (stdin) path (inc limit))]
-    (if (> size limit)
-      (str "the upload is larger than the " limit "-byte ELF limit"
-           ": flash a smaller ELF file")
-      (when-let [reason (elf/error (fs/read-all-bytes path))]
-        (str "the upload is not a flashable RP2350 ELF file: " reason)))))
+    (if (> size limit) (oversize-message limit) (elf-refusal path))))
+
+(defn receive-session-elf!
+  "Read a tethered session's ELF from standard input, delimited by a length.
+
+   A session holds standard input open past its upload, because its end of input
+   is the client-gone signal the tether waits on (see the rig runner). It
+   therefore cannot delimit the ELF by end of input the way a short operation
+   does; the client frames the ELF with a four-byte big-endian length instead,
+   so the rig reads exactly the ELF and leaves the rest of standard input to the
+   tether. A truncated or oversized frame is refused before any hardware opens."
+  [{:keys [hardware stdin]} path]
+  (let [limit (:max-elf-bytes hardware)
+        in (stdin)
+        length (read-uint32! in)]
+    (cond
+      (nil? length) "the RTT upload ended before it declared its length"
+      (neg? length) "the RTT upload declared a negative length"
+      (> length limit) (oversize-message limit)
+      :else (let [size (copy-bounded! in path length)]
+              (if (< size length)
+                "the RTT upload ended before the ELF length it declared"
+                (elf-refusal path))))))
+
+(defn read-uint32!
+  "Read one four-byte big-endian length from a stream, or nil at end of input."
+  [^InputStream in]
+  (try (.readInt (java.io.DataInputStream. in))
+       (catch java.io.EOFException _ nil)))
+
+(defn oversize-message
+  "Explain that an upload is over the ELF size limit."
+  [limit]
+  (str "the upload is larger than the " limit "-byte ELF limit: flash a smaller ELF file"))
+
+(defn elf-refusal
+  "Return why the bytes at path are not a flashable RP2350 ELF, or nil."
+  [path]
+  (when-let [reason (elf/error (fs/read-all-bytes path))]
+    (str "the upload is not a flashable RP2350 ELF file: " reason)))
 
 (defn with-upload!
   "Run the body that owns one upload and remove the upload on every exit path.

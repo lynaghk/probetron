@@ -84,9 +84,15 @@
    asked the rig to say, and then holds the session open until a test releases
    it, exactly as an outer rig command does."
   [{:keys [directory]}]
+  ;; The client now holds standard input open for a tethered session, so capture
+  ;; it in the background rather than waiting for an end of input that a live
+  ;; client never sends; an upload still closes it, so its bytes still land here.
   [(str "printf '%s\\0' \"$0\" \"$@\" > " directory "/ssh.argv")
    (str "echo $$ > " directory "/ssh.pid")
-   (str "cat > " directory "/ssh.stdin")
+   ;; Keep the real standard input on fd 3, because a backgrounded job otherwise
+   ;; reads from /dev/null, and capture it there so an upload still lands.
+   "exec 3<&0"
+   (str "cat <&3 > " directory "/ssh.stdin &")
    (str "[ -f " directory "/rig-out ] && cat " directory "/rig-out")
    (str "[ -f " directory "/rig-err ] && cat " directory "/rig-err >&2")
    (str "while [ ! -f " directory "/stop ]; do sleep 0.05; done")
@@ -177,9 +183,18 @@
       (vec (butlast (str/split (String. (fs/read-all-bytes file)) #"\x00" -1))))))
 
 (defn recorded-stdin
-  "Return the bytes that the SSH stand-in read from standard input."
+  "Return the bytes that the SSH stand-in read from standard input.
+
+   The stand-in captures standard input in the background, so wait until the
+   upload has fully landed — a non-empty size that stops growing — before
+   reading it, rather than racing the capture."
   [client]
-  (fs/read-all-bytes (path client "ssh.stdin")))
+  (let [file (path client "ssh.stdin")]
+    (loop [attempts 200 previous -1]
+      (let [size (if (fs/exists? file) (fs/size file) 0)]
+        (if (or (zero? attempts) (and (pos? size) (= size previous)))
+          (fs/read-all-bytes file)
+          (do (Thread/sleep 10) (recur (dec attempts) size)))))))
 
 (defn remote-command
   "Return the one remote command that the SSH stand-in received."

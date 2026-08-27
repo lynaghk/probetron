@@ -95,24 +95,33 @@
       (is (= :free (lock-state directory)) "the reset runs before the lock goes back")
       (finally (stop-rig! rig directory) (fs/delete-tree directory)))))
 
-(deftest a-lost-session-releases-the-lock-without-any-signal
+(deftest a-closed-client-standard-input-releases-the-lock
+  ;; The tether: a session holds the client's standard input open and reads it,
+  ;; so closing that input — as a departing client does, however it departs —
+  ;; ends the session and frees the lock with no signal.
   (let [directory (temporary-directory)
-        ready (promise)]
+        out (java.io.PipedOutputStream.)
+        in (java.io.PipedInputStream. out)]
     (try
-      (let [exit (runner/execute!
-                  {:operation :connect}
-                  (rig-runtime directory
-                               {:session-alive? (fn [] (not (realized? ready)))
-                                :perform (fn [_operation session]
-                                           (let [helper ((:start-helper! session)
-                                                         ["/bin/sh" "-c" "sleep 300"]
-                                                         {:out :inherit :err :inherit})]
-                                             (deliver ready true)
-                                             (.waitFor ^Process (:proc helper))
-                                             op/exit-ok))}))]
-        (is (= op/exit-ok exit) "the watcher unblocks a session whose client vanished")
+      (let [session (future
+                      (runner/execute!
+                       {:operation :connect}
+                       (rig-runtime directory
+                                    {:stdin (fn [] in)
+                                     :perform (fn [_operation session]
+                                                ((:watch-client! session))
+                                                (let [helper ((:start-helper! session)
+                                                              ["/bin/sh" "-c" "sleep 300"]
+                                                              {:out :inherit :err :inherit})]
+                                                  (.waitFor ^Process (:proc helper))
+                                                  op/exit-ok))})))]
+        (Thread/sleep 300)
+        (is (= :held (lock-state directory)) "the session holds the target while its client lives")
+        (.close out)
+        (is (= op/exit-ok (deref session 5000 :timeout))
+            "closing the client input unblocks the session")
         (is (= :free (lock-state directory))
-            "a lost session frees the lock even when no signal ever arrives")
+            "a departed client frees the lock even when no signal arrives")
         (is (nil? (owner-record directory)) "and drops the active metadata with it"))
       (finally (fs/delete-tree directory)))))
 

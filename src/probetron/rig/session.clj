@@ -55,6 +55,9 @@
     (or (target/missing-status runtime (required-resources operation))
         (if-let [device (swd-device runtime)]
           (do (announce-probe! device)
+              ;; A debug session sends no upload, so standard input is the tether
+              ;; from the start; its end frees the target across DAP clients.
+              ((:watch-client! session))
               (await-service! (start-server! session) :dap
                               (:hardware runtime) (:stopping? session)))
           (runner/fail! (hardware/missing-resource-message
@@ -100,7 +103,7 @@
     (target/with-upload!
       (target/upload-path runtime)
       (fn [path]
-        (if-let [error (target/receive-elf! runtime path)]
+        (if-let [error (target/receive-session-elf! runtime path)]
           (target/refuse! error)
           (body path))))))
 
@@ -110,6 +113,9 @@
   (let [{:keys [hardware] :as runtime} (:runtime session)]
     (or (channel-status! operation runtime)
         (do
+          ;; Watch the client now that its upload, if any, is read: whatever is
+          ;; left on standard input is the tether, and its end frees the target.
+          ((:watch-client! session))
           (start-holder! operation session)
           (let [bridge (start-bridge! session)]
             (when rtt-path (start-decoder! operation session rtt-path))
