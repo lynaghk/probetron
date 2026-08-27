@@ -746,20 +746,20 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 | `/run/probetron` | 256 MiB tmpfs, which carries the target lock, the active record, and the one 64 MiB upload |
 | journal          | volatile, at most 32 MiB of `/run`                                                         |
 
-`image/manifest.edn` is the only file in the project that names a revision, an archive, or a digest.
+`image/manifest.edn` names every pinned archive and digest, except probe-rs, which the `vendor/probe-rs` submodule pins by gitlink.
 
 | Pin            | Value                                                                                            |
 | -------------- | ------------------------------------------------------------------------------------------------ |
 | rpi-image-gen  | `v2.8.0`, revision `262d4df5a9f9d4133370465399a7958a7c22cdc7`                                    |
 | base           | Debian 13 Trixie arm64, `debian-trixie-arm64-minbase-snapshot` at snapshot `20260801T000000Z`    |
 | Babashka       | 1.13.219, `linux-aarch64-static`, digest pinned, installed as `/usr/local/bin/bb`                |
-| probe-rs       | 0.32.0, `aarch64-unknown-linux-gnu`, digest pinned, installed as `/usr/local/bin/probe-rs`       |
+| probe-rs       | 0.32.0 fork, compiled from the `vendor/probe-rs` submodule, installed as `/usr/local/bin/probe-rs`   |
 | DUT receptacle | `:usb-port-label` and `:usb-kernels`, both unrecorded unless a bench needs the rule narrowed to one socket |
 
-The build spends nothing before it knows it can finish: the platform gate, the GLIBC check, the pinned checkout, and rpi-image-gen's own validation all run before one byte is fetched, one key is generated, or one image is constructed.
-The staging step then verifies every pinned archive against its digest before use, so a mirror that answers with something else stops the build rather than the appliance.
+The build spends nothing before it knows it can finish: the platform gate, the Rust toolchain check, the pinned checkout, and rpi-image-gen's own validation all run before one byte is fetched, one key is generated, or one image is constructed.
+The staging step then verifies every pinned archive against its digest before use and compiles probe-rs from the pinned submodule, so a mirror that answers with something else stops the build rather than the appliance.
 
-probe-rs 0.32 is the initial pin, and a later pin belongs in `manifest.edn` only once hardware qualification records that probe-rs identifies an RP2350 over this SWD wiring.
+probe-rs is built from the `vendor/probe-rs` fork, which carries an RP2350 SWD reset-and-halt fix that no stock 0.32.0 release ships; move back to a stock release pin in `manifest.edn` once that fix is upstream.
 
 ## Security model
 
@@ -904,7 +904,8 @@ A release archive carries every source file except `provisioning/`, because a cl
 | `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive    |
 | `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                  |
 | `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                    |
-| `image/manifest.edn`                         | every pinned revision, archive, and digest of the rig image        |
+| `image/manifest.edn`                         | every pinned archive and digest, save the probe-rs source          |
+| `vendor/probe-rs`                            | the patched probe-rs fork the image compiles, pinned as a submodule |
 | `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance               |
 | `image/layer/`                           | the seven named appliance layers and their `.rootfs-overlay/` trees |
 | `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                |

@@ -1,6 +1,7 @@
 ;; Every pinned input of the Probetron rig image.
-;; probetron.provisioning.image reads this file, and nothing else in the
-;; project states an image version, an archive URL, or a checksum.
+;; probetron.provisioning.image reads this file. It pins every downloaded input
+;; by URL and checksum, with one exception: probe-rs is built from the
+;; vendor/probe-rs submodule, which pins that source by gitlink.
 ;; A pin moves only when hardware qualification records the move here.
 {:host
  {:id "debian"
@@ -36,16 +37,16 @@
   :member "bb"
   :install "/usr/local/bin/bb"}
 
- ;; probe-rs 0.32 is the initial pin.
- ;; A later pin belongs here only once hardware qualification records that
- ;; probe-rs identifies an RP2350 over the direct Linux SPI SWD wiring.
+ ;; probe-rs is built from source, not downloaded. The image compiles the
+ ;; vendored fork at vendor/probe-rs, a submodule whose commit — pinned by this
+ ;; superproject's gitlink rather than by this file — is the exact source. The
+ ;; fork carries an RP2350 SWD reset-and-halt fix that the stock 0.32.0 release
+ ;; lacks; once that fix ships upstream, drop the submodule and re-pin a stock
+ ;; release URL and checksum here.
  :probe-rs
  {:version "0.32.0"
-  :url "https://github.com/probe-rs/probe-rs/releases/download/v0.32.0/probe-rs-tools-aarch64-unknown-linux-gnu.tar.xz"
-  :sha256 "7c818cfd77808e806bf8f4d108c9137910b4fb28e0fe5c464d39782dbbc8af31"
-  :member "probe-rs-tools-aarch64-unknown-linux-gnu/probe-rs"
-  :install "/usr/local/bin/probe-rs"
-  :glibc "2.39"}
+  :source "vendor/probe-rs"
+  :install "/usr/local/bin/probe-rs"}
 
  ;; The one DUT slot. Both values stay nil on an ordinary rig, which owns one
  ;; DUT and carries no console, so the udev rule matches the one CDC serial

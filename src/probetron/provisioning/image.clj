@@ -18,12 +18,12 @@
             [probetron.provisioning.package :as package]
             [probetron.version :as version]))
 
-(declare usage build! validate! checked-manifest! read-manifest! check-host! check-glibc! checkout!
+(declare usage build! validate! checked-manifest! read-manifest! check-host! check-toolchain! checkout!
          report-topology! require-privilege! prepare-work! temporary-directory work-directory
          space-state gibibytes stage! generate-image! publish! report
          layer-files pipeline-layers canonical-env overrides ig-program dependency-state
          install-hint install-command
-         capture! stream! download! extract! sha-256-file os-release environment-file
+         capture! stream! download! extract! build-probe-rs! sha-256-file os-release environment-file
          fail! fatal move!)
 
 (def project-root
@@ -38,8 +38,12 @@
        str))
 
 (def manifest-file
-  "The only file that states a pinned revision, archive, or checksum."
+  "The file that pins every downloaded input by revision, archive, and checksum, except probe-rs, which the vendor/probe-rs submodule pins."
   "image/manifest.edn")
+
+(def probe-rs-source
+  "The vendored probe-rs fork that the image compiles into its probe-rs binary."
+  "vendor/probe-rs")
 
 (def source-root
   "The rpi-image-gen source tree of Probetron: image/config and image/layer."
@@ -133,7 +137,7 @@
   []
   (doto (read-manifest!)
     check-host!
-    check-glibc!))
+    check-toolchain!))
 
 (defn read-manifest!
   "Return the pinned inputs of the image, or fail when nobody recorded them."
@@ -148,8 +152,8 @@
 (defn check-host!
   "Fail unless the build host is the one distribution and machine that is pinned.
 
-   rpi-image-gen supports native Debian arm64 alone, and the pinned probe-rs
-   binary is an aarch64 GNU binary, so no other host can produce this image."
+   rpi-image-gen supports native Debian arm64 alone, and the image compiles
+   probe-rs here into an aarch64 binary, so no other host can produce this image."
   [manifest]
   (let [{:keys [id version-id machine]} (:host manifest)
         release (os-release)
@@ -162,15 +166,17 @@
       (fail! (str "the image builds on " machine " alone, and this host is " found
                   ": run the build on a Debian " version-id " " machine " host")))))
 
-(defn check-glibc!
-  "Fail unless the pinned base satisfies the GLIBC that pinned probe-rs needs."
-  [manifest]
-  (let [version #(mapv parse-long (str/split % #"\."))
-        base (get-in manifest [:suite :glibc])
-        needed (get-in manifest [:probe-rs :glibc])]
-    (when (neg? (compare (version base) (version needed)))
-      (fail! (str "the pinned base carries GLIBC " base " and the pinned probe-rs needs GLIBC "
-                  needed ": pin a newer base or an older probe-rs in " manifest-file)))))
+(defn check-toolchain!
+  "Fail unless this host carries the Rust toolchain that compiles probe-rs.
+
+   The image builds probe-rs from vendor/probe-rs rather than fetching a binary,
+   so cargo must be on PATH; the fork's rust-toolchain.toml then pins the exact
+   compiler. Building on the pinned Debian host also settles GLIBC, because the
+   binary links against the very base the image ships."
+  [_manifest]
+  (when-not (fs/which "cargo")
+    (fail! (str "cannot find cargo on PATH: install Rust before building the image,"
+                " and rust-toolchain.toml pins the version it uses"))))
 
 (defn checkout!
   "Return the pinned rpi-image-gen checkout, cloning or moving it only if needed.
@@ -355,7 +361,7 @@
 ;;; Staging
 
 (defn stage!
-  "Fetch and verify every external input, and return where each one waits.
+  "Build, fetch, and verify every external input, and return where each one waits.
 
    Every artefact arrives on the build host and nothing is ever fetched from the
    target image, at first boot or later."
@@ -374,7 +380,7 @@
               "cannot generate the image SSH keypair: install openssh-client")
     {:release (str (:archive release))
      :babashka (str (extract! manifest :babashka))
-     :probe-rs (str (extract! manifest :probe-rs))
+     :probe-rs (str (build-probe-rs!))
      :rig-key (str rig-key)
      :authorized-key (str rig-key ".pub")}))
 
@@ -407,6 +413,30 @@
         (fs/set-posix-file-permissions unpacked "rwxr-xr-x")
         (finally (fs/delete-tree work))))
     unpacked))
+
+(defn build-probe-rs!
+  "Compile the probe-rs CLI from the vendored fork and return its staged path.
+
+   The image builds probe-rs from vendor/probe-rs rather than fetching a binary,
+   because the fork carries an RP2350 SWD reset-and-halt fix that no stock release
+   ships yet. Building on the pinned Debian host links the binary against the base
+   image's own GLIBC, and the release profile strips it so it stays as small as a
+   published one. A warm cargo cache makes a repeat build cheap."
+  []
+  (let [source (fs/path project-root probe-rs-source)
+        binary (fs/path source "target" "release" "probe-rs")
+        staged (fs/path project-root cache-directory "stage" "probe-rs")]
+    (when-not (fs/regular-file? (fs/path source "Cargo.toml"))
+      (fail! (str "the probe-rs submodule is empty: run 'git submodule update --init " probe-rs-source "'")))
+    (stream! {:dir (str source)}
+             ["cargo" "build" "--release" "--locked"
+              "--config" "profile.release.strip=true"
+              "--package" "probe-rs-tools" "--bin" "probe-rs"]
+             "cannot build probe-rs from vendor/probe-rs")
+    (fs/create-dirs (fs/parent staged))
+    (fs/copy binary staged {:replace-existing true})
+    (fs/set-posix-file-permissions staged "rwxr-xr-x")
+    staged))
 
 (defn download!
   "Fetch one URL to one path, and leave no half-written file behind."

@@ -30,8 +30,8 @@
 # X-Env-Var-babashka-Set: y
 #
 # X-Env-Var-probe_rs:
-# X-Env-Var-probe_rs-Desc: Build host path of the verified aarch64 probe-rs
-#  binary that becomes /usr/local/bin/probe-rs.
+# X-Env-Var-probe_rs-Desc: Build host path of the aarch64 probe-rs binary,
+#  compiled from vendor/probe-rs, that becomes /usr/local/bin/probe-rs.
 # X-Env-Var-probe_rs-Required: n
 # X-Env-Var-probe_rs-Valid: string-or-empty
 # X-Env-Var-probe_rs-Set: y
@@ -88,5 +88,5 @@ mmdebstrap:
     - |-
       set -eu
       test -n "${IGconf_probetron_probe_rs:-}" && test -f "$IGconf_probetron_probe_rs" ||
-        { echo "probetron-runtime: no verified probe-rs binary: run 'bb image', which fetches and checks the pinned archive" >&2 ; exit 1 ; }
+        { echo "probetron-runtime: no probe-rs binary: run 'bb image', which builds it from vendor/probe-rs" >&2 ; exit 1 ; }
       install -m 0755 -o root -g root "$IGconf_probetron_probe_rs" "$1/usr/local/bin/probe-rs"
