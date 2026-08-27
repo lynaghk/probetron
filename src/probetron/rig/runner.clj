@@ -18,9 +18,10 @@
 
 (declare default-runtime default-paths default-executables default-filesystem default-hardware
          own-target! report-status! probe-lock acquire-lock! handshake! release-lock!
-         register-cleanup! session start-helper! clean-up! stop-groups! signal-group! await-exit!
-         run-reset! write-active! read-owner! delete-active! write-atomically! glob-paths
-         report-busy! fail! warn!)
+         register-cleanup! watch-session! launching-parent launching-anchor-pid session-present?
+         session start-helper! clean-up! stop-groups! signal-group! await-exit! run-reset!
+         write-active! read-owner! delete-active! write-atomically! glob-paths report-busy!
+         fail! warn!)
 
 (def terminate-grace-ms
   "How long an owned process group has to answer SIGTERM before SIGKILL follows."
@@ -29,6 +30,10 @@
 (def reap-grace-ms
   "How long the shell waits for a signalled process to disappear."
   1000)
+
+(def session-poll-ms
+  "How often the shell checks that the launching session is still there."
+  500)
 
 (defn execute!
   "Carry out one validated rig operation and return its exit status.
@@ -64,6 +69,7 @@
         (try
           (write-active! runtime (lifecycle/active-metadata operation (pid) (clock)))
           (register-cleanup! state runtime)
+          (watch-session! state runtime)
           (perform operation (session state runtime))
           (catch Exception exception
             (warn! (or (ex-message exception) (str exception)))
@@ -78,6 +84,23 @@
    starts any helper."
   [state runtime]
   (.addShutdownHook (Runtime/getRuntime) (Thread. ^Runnable #(clean-up! state runtime))))
+
+(defn watch-session!
+  "Release the target when the launching session goes away, signal or not.
+
+   sudo runs the rig command inside its own pseudo-terminal, so the SIGHUP that
+   sshd sends when a client disconnects does not always reach it, and a lost
+   session can orphan the operation and strand the lock. A watcher notices the
+   launching process going away and runs the same cleanup a signal would, so a
+   dropped or hard-killed client frees the bench within one poll interval."
+  [state {:keys [session-alive?] :as runtime}]
+  (future
+    (loop []
+      (Thread/sleep session-poll-ms)
+      (cond
+        (:cleaned? @state) nil
+        (not (session-alive?)) (clean-up! state runtime)
+        :else (recur)))))
 
 (defn session
   "Return the handle that one operation uses to start owned helpers.
@@ -272,6 +295,38 @@
    :write-file! #'write-atomically!
    :delete-file! fs/delete-if-exists})
 
+(def launching-parent
+  "The sudo that started this rig program, held so a lost session is visible.
+
+   sudo survives a client disconnect instead of passing on the SIGHUP, so its
+   own liveness says nothing; what dies is the SSH session process above it."
+  (.orElse (.parent (java.lang.ProcessHandle/current)) nil))
+
+(def launching-anchor-pid
+  "The pid of the SSH session process above sudo, captured at startup.
+
+   sshd runs one operation per SSH invocation, so this is the client's own
+   channel. When the client disconnects, sshd ends it and sudo reparents to
+   init, so a change here is the signal that the session is gone even though
+   sudo, and this program under it, live on."
+  (when launching-parent
+    (let [grandparent (.parent ^java.lang.ProcessHandle launching-parent)]
+      (when (.isPresent grandparent) (.pid (.get grandparent))))))
+
+(defn session-present?
+  "Tell whether the SSH session that launched this operation is still there.
+
+   The anchor is the SSH session process above sudo. It is gone once sudo dies
+   or reparents away from it, and an unknown anchor cannot be judged, so it
+   counts as present rather than reaping a session the shell cannot see."
+  [parent anchor-pid]
+  (cond
+    (nil? parent) true
+    (not (.isAlive ^java.lang.ProcessHandle parent)) false
+    (nil? anchor-pid) true
+    :else (let [grandparent (.parent ^java.lang.ProcessHandle parent)]
+            (and (.isPresent grandparent) (= anchor-pid (.pid (.get grandparent)))))))
+
 (def default-runtime
   "The production wiring of the clock, the current process, and subprocesses."
   {:paths default-paths
@@ -280,6 +335,7 @@
    :hardware default-hardware
    :clock (fn [] (java.time.Instant/now))
    :pid (fn [] (.pid (java.lang.ProcessHandle/current)))
+   :session-alive? (fn [] (session-present? launching-parent launching-anchor-pid))
    :stdin (fn [] System/in)
    :spawn! process/process
    :run! (fn [argv opts]

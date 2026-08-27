@@ -94,6 +94,27 @@
       (is (= :free (lock-state directory)) "the reset runs before the lock goes back")
       (finally (stop-rig! rig directory) (fs/delete-tree directory)))))
 
+(deftest a-lost-session-releases-the-lock-without-any-signal
+  (let [directory (temporary-directory)
+        ready (promise)]
+    (try
+      (let [exit (runner/execute!
+                  {:operation :connect}
+                  (rig-runtime directory
+                               {:session-alive? (fn [] (not (realized? ready)))
+                                :perform (fn [_operation session]
+                                           (let [helper ((:start-helper! session)
+                                                         ["/bin/sh" "-c" "sleep 300"]
+                                                         {:out :inherit :err :inherit})]
+                                             (deliver ready true)
+                                             (.waitFor ^Process (:proc helper))
+                                             op/exit-ok))}))]
+        (is (= op/exit-ok exit) "the watcher unblocks a session whose client vanished")
+        (is (= :free (lock-state directory))
+            "a lost session frees the lock even when no signal ever arrives")
+        (is (nil? (owner-record directory)) "and drops the active metadata with it"))
+      (finally (fs/delete-tree directory)))))
+
 (deftest stale-metadata-does-not-report-a-false-owner
   (let [directory (temporary-directory)]
     (try
