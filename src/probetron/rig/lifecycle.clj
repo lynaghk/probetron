@@ -49,9 +49,13 @@
     {:command (:command value) :pid (:pid value) :started-at (:started-at value)}))
 
 (defn status-report
-  "Describe the target lock and, when something holds it, its owner."
-  [held? owner]
-  (cond-> {:lock (if held? :held :free)}
+  "Describe the build that answers, the target lock, and, when held, its owner.
+
+   The build stamp arrives from the shell, so this model opens nothing to name
+   the rig that a person just reached."
+  [probetron held? owner]
+  (cond-> {:probetron probetron
+           :lock (if held? :held :free)}
     (and held? owner) (assoc :active owner)))
 
 (defn render-status
@@ -63,9 +67,10 @@
 
 (defn render-text
   "Render a status report for a person."
-  [{:keys [lock active]}]
+  [{:keys [probetron lock active]}]
   (str/join "\n"
-            (cond-> [(str "lock: " (name lock))]
+            (cond-> [(str "probetron: " probetron)
+                     (str "lock: " (name lock))]
               (and (= :held lock) (nil? active)) (conj "active command: unknown")
               active (into [(str "active command: " (name (:command active)))
                             (str "active pid: " (:pid active))

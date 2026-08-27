@@ -8,7 +8,8 @@
             [probetron.rig.fixture :as fixture]
             [probetron.rig.runner :as runner]
             [probetron.stand-in :as stand-in]
-            [probetron.operation :as op])
+            [probetron.operation :as op]
+            [probetron.version :as version])
   (:import (java.io StringWriter)
            (java.util.concurrent TimeUnit)))
 
@@ -121,6 +122,8 @@
       (spit (fs/file (:active (paths directory)))
             (pr-str {:command :connect :pid 999999 :started-at "2026-01-01T00:00:00Z"}))
       (let [text (run-status! directory :text)]
+        (is (str/includes? text (str "probetron: " version/probetron-version))
+            "status names the build that answers, as info does")
         (is (str/includes? text "lock: free"))
         (is (not (str/includes? text "connect"))))
       (is (not (fs/exists? (:active (paths directory))))

@@ -12,7 +12,8 @@
             [clojure.edn :as edn]
             [probetron.rig.hardware :as hardware]
             [probetron.rig.lifecycle :as lifecycle]
-            [probetron.operation :as op])
+            [probetron.operation :as op]
+            [probetron.version :as version])
   (:import (java.io InputStream IOException OutputStream)
            (java.util.concurrent TimeUnit)))
 
@@ -210,7 +211,9 @@
       (fail! (str "cannot read the target lock " (:lock paths) ": check the rig installation"))
       (let [owner (when held? (read-owner! runtime))]
         (when-not held? (delete-active! runtime))
-        (println (lifecycle/render-status (lifecycle/status-report held? owner) format))
+        (println (lifecycle/render-status
+                  (lifecycle/status-report (version/stamp-line (version/describe)) held? owner)
+                  format))
         op/exit-ok))))
 
 (defn probe-lock
