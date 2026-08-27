@@ -155,6 +155,30 @@ A rig owns one DUT and runs no console, so the one CDC serial device it can see 
 A bench that really does present a second CDC device records a receptacle in `image/pins.edn`, and the rule then narrows to that physical socket, so a board anywhere else is not the DUT.
 `--channel usb` needs that cable only when the firmware exposes native USB CDC; SWD, RTT, and DAP all work without it.
 
+## Target boards
+
+The Pi side of [Wire the target](#wire-the-target) never changes, so wiring a new board is a matter of finding SWCLK, SWDIO, RUN, and GND on it.
+Each board below names those four points, and the official pinout carries the rest.
+
+Two references cover every Raspberry Pi board: the [Pico-series documentation](https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html) holds the pinout figures, and each board's datasheet holds the same figure as a PDF.
+
+### Raspberry Pi Pico 2 W
+
+The wireless antenna owns the bottom edge, so the RP2350 debug port moves to three pads in the middle of the board rather than the edge where a plain Pico 2 carries it.
+Hold the board with the USB connector at the top, and the three pads read **SWCLK, GND, SWDIO** from left to right; the square pad is SWCLK.
+RUN is not on those pads: it is pin 30 on the right side of the 40-pin header, the third pin up from the bottom-right corner.
+A bare Pico 2 W ships those three pads unpopulated, so a breakout board that already presents them as pins saves you the soldering.
+
+| Probetron wire            | Pico 2 W point                     |
+| ------------------------- | ---------------------------------- |
+| SWCLK — pin 23            | SWCLK, the left debug pad (square) |
+| SWDIO — pin 19 through 1 kΩ, joined by pin 21 | SWDIO, the right debug pad |
+| RUN — pin 37              | RUN, header pin 30                 |
+| GND — pin 20, 25, or 39   | GND, the middle debug pad          |
+
+The three debug pads carry no power, so the DUT still needs its own supply over the USB cable or VSYS.
+The datasheet figure that fixes this order is Figure 4 of the [Pico 2 W datasheet](https://datasheets.raspberrypi.com/picow/pico-2-w-datasheet.pdf).
+
 ## Give the rig an address
 
 The rig uses wired Ethernet, brings `eth0` up with DHCP, and announces nothing over multicast.
