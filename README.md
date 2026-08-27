@@ -267,7 +267,7 @@ Target-specific values also come from ordinary environment variables, and an exp
 | ---------------------------- | -------------------- | ------ | ----------------------------------------------- |
 | `PROBETRON_HOST`             | `--host`             | —      | a DNS name, an IPv4 literal, or an IPv6 literal |
 | `PROBETRON_CHIP`             | `--chip`             | —      | a probe-rs chip name such as `RP2350`           |
-| `PROBETRON_SPEED_KHZ`        | `--speed-khz`        | 20     | 1 to 50000 kHz                                  |
+| `PROBETRON_SPEED_KHZ`        | `--speed-khz`        | 1000   | 1 to 50000 kHz                                  |
 | `PROBETRON_UART_BAUD`        | `--baud`             | 115200 | 50 to 4000000 bit/s                             |
 | `PROBETRON_USB_WAIT_SECONDS` | `--usb-wait-seconds` | 10     | 0 to 60 seconds                                 |
 
@@ -279,7 +279,7 @@ export PROBETRON_CHIP=RP2350
 ```
 
 `--chip` is the name that the pinned probe-rs knows, which `probe-rs chip list | grep -i rp2` prints on the rig, and hardware qualification records the exact spelling for RP2350.
-`--speed-khz` is the SWD clock, and 20 kHz is the conservative default that reaches a target on almost any wiring; a qualification run raises it to the fastest speed one rig holds.
+`--speed-khz` is the SWD clock, and 1 MHz is the default, which is the speed the pinned probe-rs already uses for its Linux SPI-SWD probe and which reaches a target over ordinary jumper wiring on a wide range of chips; a qualification run raises it to the fastest speed one rig holds, or lowers it for wiring that 1 MHz cannot reach.
 `info` clocks the bus at this speed too, so a target that auto-detection cannot pin still reads reliably.
 
 Exit status 0 reports success, 1 reports a failed operation, 64 reports a usage error, 69 reports a missing rig resource, and 75 reports a rig that is busy with another operation.
@@ -818,7 +818,7 @@ When a measurement differs from what this document or `image/manifest.edn` state
 A discrepancy that hides behind runtime inventory is a defect, because the rig deliberately owns no inventory.
 
 1. **Identify the target.** Wire SWD as the table above says, then run `probetron info --host <host>`. The `target:` block must show the debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`. Record the exact chip name that `ssh probetron@<host> 'probe-rs chip list' | grep -i rp2` prints, and correct every `--chip RP2350` example here if it differs.
-2. **Prove the link at the default speed.** `probetron info` reads the bus at 20 kHz, so run one write as well: `probetron flash --host <host> --chip RP2350 --speed-khz 20 blinky.elf`. It must verify and start the firmware.
+2. **Prove the link at the default speed.** `probetron info` reads the bus at 1 MHz, so run one write as well: `probetron flash --host <host> --chip RP2350 --speed-khz 1000 blinky.elf`. It must verify and start the firmware.
 3. **Step through the candidate speeds.** Run the same flash five times at each of 20, 100, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000, and 24000 kHz, and stop at the first speed that fails once.
 
    ```sh
@@ -830,7 +830,7 @@ A discrepancy that hides behind runtime inventory is a defect, because the rig d
    done
    ```
 
-   Record the highest speed that passed every attempt, take one step back from it, and pin that value: change `default-speed-khz` in `src/probetron/operation.clj` and the default in the environment table above, or document why the bench keeps 20 kHz.
+   Record the highest speed that passed every attempt, take one step back from it, and pin that value: change `default-speed-khz` in `src/probetron/operation.clj` and the default in the environment table above, or document why the bench keeps the 1 MHz default.
 
 4. **Verify GPIO reset.** Flash firmware whose startup is visible from outside, such as a blink pattern that begins with three fast pulses, then run `probetron reset --host <host>`. The startup pattern must begin again, with no BOOTSEL and no physical reset press, and the command must exit 0. A reset that only works when somebody touches the board means GPIO26 never reaches RUN. Reset takes the short lock, so run it while no session holds the target.
 5. **Reverify the DUT slot.** Plug the DUT in and read its ancestry on the rig.

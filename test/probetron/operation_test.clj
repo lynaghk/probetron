@@ -24,7 +24,7 @@
   (is (= 75 operation/exit-busy)))
 
 (deftest defaults
-  (is (= 20 operation/default-speed-khz))
+  (is (= 1000 operation/default-speed-khz))
   (is (= 115200 operation/default-baud))
   (is (= 10 operation/default-usb-wait-seconds))
   (is (= 60 operation/max-usb-wait-seconds)))
