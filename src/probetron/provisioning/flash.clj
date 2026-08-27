@@ -20,8 +20,9 @@
 
 (declare usage enumerate! selectable internal order-disks pick letters menu!
          resolve-image! verify-image! write! prompt-disk!
-         disk-records disk-record partition-mounts format-size
+         disk-records disk-record partition-mounts format-size human clock
          json! stream! sha-256-file fail! fatal
+         uncompressed-size! copy-progress! progress-line
          platform! image-tool!)
 
 (def project-root
@@ -155,6 +156,30 @@
           marker node name (format-size size)
           (if (seq mounts) (str/join " " mounts) "(not mounted)")))
 
+(defn human
+  "Return a byte count as MiB, or GiB once it passes a thousand of them."
+  [bytes]
+  (let [mib (/ (double bytes) 1048576)]
+    (if (>= mib 1024)
+      (format "%.1f GiB" (/ mib 1024))
+      (format "%.0f MiB" mib))))
+
+(defn clock
+  "Return a whole-second duration as minutes and seconds, m:ss."
+  [seconds]
+  (format "%d:%02d" (quot seconds 60) (mod seconds 60)))
+
+(defn progress-line
+  "Return the one write-progress line for the bytes done against the total.
+
+   A nil total, from an image whose index would not read, drops the percent and the estimate."
+  [done total bytes-per-second]
+  (str (format "\r  %s / %s" (human done) (if total (human total) "?"))
+       (when (and total (pos? total)) (format "  %3.0f%%" (* 100.0 (/ (double done) total))))
+       (format "  %s/s" (human bytes-per-second))
+       (when (and total (pos? bytes-per-second))
+         (format "  ETA %s" (clock (long (/ (- total done) bytes-per-second)))))))
+
 ;;; Imperative shell
 
 (defn platform!
@@ -248,15 +273,26 @@
 (defn write!
   "Unmount the disk, write the image to its raw device, and eject it.
 
-   xz reads the image as a file, so --verbose knows its size and paints a live
-   progress indicator, and dd throttling the pipe makes that indicator track the
-   real write rate rather than the speed of decompression alone."
+   xz decompresses to a pipe, and dd writes that pipe to the raw device.
+   This function copies the pipe itself, so it counts the bytes reaching dd and paints one progress line against them.
+   dd throttles the copy, so the line tracks the write, not the decompression, and reaches 100% with the write rather than the last of the compressed input.
+   sudo caches its authentication first, so no password prompt breaks the line."
   [{:keys [node raw-node name size]} image]
   (println (str "\nErasing " node " (" name ", " (format-size size) ") with " (fs/file-name (fs/path image))))
   (stream! ["diskutil" "unmountDisk" node] (str "cannot unmount " node))
-  (stream! ["bash" "-c" "set -o pipefail; xz --decompress --stdout --verbose \"$1\" | sudo dd of=\"$2\" bs=1m"
-            "bash" image raw-node]
-           (str "cannot write the image to " node))
+  (stream! ["sudo" "-v"] "flash needs administrator rights to write the disk")
+  (println (str "Writing " (fs/file-name (fs/path image)) " -> " raw-node))
+  (let [total (uncompressed-size! image)
+        xz (process/process ["xz" "--decompress" "--stdout" image] {:err :inherit})
+        dd (process/process ["sudo" "dd" (str "of=" raw-node) "bs=1m"] {:out :inherit :err :inherit})]
+    (copy-progress! (.getInputStream ^Process (:proc xz))
+                    (.getOutputStream ^Process (:proc dd))
+                    total)
+    (let [xz-exit (:exit @xz)
+          dd-exit (:exit @dd)]
+      (when-not (and (zero? xz-exit) (zero? dd-exit))
+        (fail! (str "cannot write the image to " node
+                    ": xz exit " xz-exit ", dd exit " dd-exit)))))
   (stream! ["diskutil" "eject" node] (str "cannot eject " node))
   (println "Done. The card is safe to remove.")
   op/exit-ok)
@@ -285,6 +321,46 @@
   (let [{:keys [exit]} @(process/process argv {:out :inherit :err :inherit :in :inherit})]
     (when-not (zero? exit)
       (fail! (str message ": exit status " exit)))))
+
+(defn uncompressed-size!
+  "Return the byte count that an xz image expands to, from its own index, or nil.
+
+   xz --robot --list reads the size from the stream footer without unpacking the image, in the fifth field of the tab-separated `file` line.
+   A foreign image may lack a readable index, and a nil total then drops the percent rather than stopping the write."
+  [image]
+  (let [{:keys [exit out]} @(process/process ["xz" "--robot" "--list" image]
+                                             {:out :string :err :string})]
+    (when (zero? exit)
+      (some->> (str/split-lines out)
+               (map #(str/split % #"\t"))
+               (some (fn [fields] (when (= "file" (first fields)) (nth fields 4 nil))))
+               parse-long))))
+
+(defn copy-progress!
+  "Copy source to sink, repainting one progress line against the bytes copied.
+
+   dd reads sink no faster than the card accepts, so the loop blocks on the write and counts the write, not the decompression that feeds it.
+   The line repaints on a byte threshold, not every read, so a fast pipe cannot flood the terminal.
+   The sink closes at the end to signal dd the end of the image."
+  [source sink total]
+  (let [buffer (byte-array 1048576)
+        started (System/currentTimeMillis)]
+    (loop [done 0 painted -1]
+      (let [n (.read source buffer)]
+        (if (neg? n)
+          (let [elapsed (max 0.001 (/ (- (System/currentTimeMillis) started) 1000.0))]
+            (.flush sink)
+            (.close sink)
+            (println (progress-line done total (/ done elapsed))))
+          (do
+            (.write sink buffer 0 n)
+            (let [done (+ done n)]
+              (if (>= (- done painted) 8388608)
+                (let [elapsed (max 0.001 (/ (- (System/currentTimeMillis) started) 1000.0))]
+                  (print (progress-line done total (/ done elapsed)))
+                  (flush)
+                  (recur done done))
+                (recur done painted)))))))))
 
 (defn sha-256-file
   "Return the SHA-256 of one file as lower-case hexadecimal.
