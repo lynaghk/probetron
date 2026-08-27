@@ -24,6 +24,13 @@
 (def uart-device "/dev/ttyAMA0")
 (def usb-device "/dev/probetron-dut")
 
+(def dut-link
+  "The loopback pseudo-terminal that the holder keeps live for the whole session.
+
+   The holder opens the real DUT once and mirrors it here, so every byte client
+   bridges to this always-live link instead of opening the DUT itself."
+  "/run/probetron/dut")
+
 ;; The services that a locked session exposes on Pi loopback alone.
 (def loopback op/rig-loopback)
 (def byte-port op/rig-byte-port)
@@ -62,6 +69,7 @@
    :run-gpio run-gpio
    :uart-device uart-device
    :usb-device usb-device
+   :dut-link dut-link
    :loopback loopback
    :byte-port byte-port
    :dap-port dap-port
@@ -117,25 +125,41 @@
   [device]
   (str spi-selector-prefix device))
 
+(defn channel-holder-command
+  "Return the argv that opens the DUT channel once and holds it live all session.
+
+   socat opens the DUT the moment the session starts and mirrors it to a
+   loopback pseudo-terminal, so the board settles one connection at the start of
+   the session and every byte client after that attaches to a channel that is
+   already live, exactly as a direct USB cable behaves. Holding the DUT open
+   keeps the board's own bytes waiting on the link until a client reads them,
+   and keeps the line asserted so a client attaching and leaving never makes the
+   board re-announce itself mid-session."
+  [{:keys [socat]} {:keys [dut-link]} address]
+  [socat address (str "PTY,link=" dut-link ",raw,echo=0")])
+
 (defn byte-service-command
   "Return the argv of the rig byte listener.
 
-   socat accepts on Pi loopback alone, and it opens the channel address again
-   for every accepted connection, so a DUT that re-enumerated resolves once more."
-  [{:keys [socat]} {:keys [loopback byte-port]} address]
+   socat accepts on Pi loopback alone and bridges every accepted connection to
+   the persistent link that the holder keeps open, so one client after another
+   reaches a channel that is already live rather than opening the DUT itself."
+  [{:keys [socat]} {:keys [loopback byte-port dut-link]}]
   [socat
    (str "TCP-LISTEN:" byte-port ",bind=" loopback "," byte-listen-options)
-   address])
+   (str "FILE:" dut-link ",raw,echo=0")])
 
 (defn channel-address
-  "Return the socat address of one DUT byte channel.
+  "Return the socat address of the DUT byte channel that the holder opens.
 
    Both channels are raw byte streams behind a stable path, and only the UART
-   carries a bit rate."
+   carries a bit rate. o-noctty opens the device without making it a controlling
+   terminal: the holder is a session leader, so without it the first byte the
+   board streams could raise a terminal signal and end the holder at once."
   [{:keys [uart-device usb-device]} {:keys [channel baud]}]
   (case channel
-    :uart (str "FILE:" uart-device ",raw,echo=0,b" baud)
-    :usb (str "FILE:" usb-device ",raw,echo=0")))
+    :uart (str "FILE:" uart-device ",raw,echo=0,o-noctty,b" baud)
+    :usb (str "FILE:" usb-device ",raw,echo=0,o-noctty")))
 
 (defn channel-resource
   "Name the rig resource that carries one DUT byte channel."

@@ -29,26 +29,45 @@
       (let [{:keys [argv opts]} (helper-call @calls "bridge")]
         (is (= [(socat directory)
                 "TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1"
-                (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,b115200")]
-               argv))
+                (str "FILE:" (device directory "dut") ",raw,echo=0")]
+               argv)
+            "the listener bridges every client to the live link, not the DUT")
         (testing "the listener carries structured bytes on the service alone"
           (is (= {:out :inherit :err :inherit} opts))
           (is (not-any? #{"-" "STDIO" "STDIN"} argv)))))))
 
+(deftest the-holder-opens-the-dut-once-and-mirrors-it-to-a-live-link
+  (with-running-session! uart-operation {}
+    (fn [{:keys [calls directory]}]
+      (let [{:keys [argv opts]} (helper-call @calls "holder")]
+        (is (= [(socat directory)
+                (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b115200")
+                (str "PTY,link=" (device directory "dut") ",raw,echo=0")]
+               argv)
+            "the holder opens the DUT once and mirrors it to the loopback link")
+        (is (= {:out :inherit :err :inherit} opts))))))
+
 (deftest the-uart-channel-takes-the-requested-baud
   (with-running-session! (assoc uart-operation :baud 921600) {}
     (fn [{:keys [calls directory]}]
-      (is (= (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,b921600")
-             (last (:argv (helper-call @calls "bridge"))))))))
+      (is (= (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b921600")
+             (second (:argv (helper-call @calls "holder"))))
+          "the holder that opens the DUT carries the requested baud"))))
 
-(deftest the-usb-channel-reopens-the-stable-device-path-for-every-client
+(deftest the-usb-channel-opens-the-stable-device-path-once-and-holds-it
   (with-running-session! usb-operation {}
     (fn [{:keys [calls directory]}]
-      (let [argv (:argv (helper-call @calls "bridge"))]
-        (is (= (str "FILE:" (device directory "probetron-dut") ",raw,echo=0") (last argv))
-            "every accepted connection resolves the same stable path again")
-        (is (str/includes? (second argv) "fork")
-            "socat opens the channel again for every accepted connection")))))
+      (let [holder (:argv (helper-call @calls "holder"))
+            bridge (:argv (helper-call @calls "bridge"))]
+        (is (= (str "FILE:" (device directory "probetron-dut") ",raw,echo=0,o-noctty")
+               (second holder))
+            "the holder opens the stable DUT path once for the whole session")
+        (is (str/starts-with? (last holder) "PTY,link=")
+            "and mirrors it to a loopback link that clients share")
+        (is (str/includes? (second bridge) "fork")
+            "the listener still forks one child per accepted connection")
+        (is (= (str "FILE:" (device directory "dut") ",raw,echo=0") (last bridge))
+            "but every client bridges to the live link, not the DUT")))))
 
 (deftest the-usb-channel-waits-for-the-dut-to-enumerate
   (let [directory (temporary-directory)
@@ -59,10 +78,10 @@
         (fs/delete-if-exists appearing)
         (future (Thread/sleep 300) (fs/create-file appearing))
         (let [exit (future (runner/execute! (assoc usb-operation :usb-wait-seconds 10) runtime))]
-          (is (some? (fixture/await-pid! directory "bridge"))
-              "the bridge starts once the DUT enumerates")
-          (is (= (str "FILE:" appearing ",raw,echo=0")
-                 (last (:argv (helper-call @calls "bridge")))))
+          (is (some? (fixture/await-pid! directory "holder"))
+              "the holder opens the DUT once it enumerates")
+          (is (= (str "FILE:" appearing ",raw,echo=0,o-noctty")
+                 (second (:argv (helper-call @calls "holder")))))
           (fixture/release! directory)
           (is (= op/exit-ok (deref exit 15000 :timeout)))))
       (finally (fixture/stop-all! directory) (fs/delete-tree directory)))))
@@ -105,7 +124,7 @@
     (fn [{:keys [calls directory]}]
       (let [bridge (helper-call @calls "bridge")
             decoder (helper-call @calls "rtt")]
-        (is (= 2 (count @calls)) "the bridge and the decoder are two owned children")
+        (is (= 3 (count @calls)) "the holder, the bridge, and the decoder are three owned children")
         (is (stand-in/alive? (fixture/await-pid! directory "bridge")))
         (is (stand-in/alive? (fixture/await-pid! directory "rtt")))
         (testing "the decoder names the Linux SPI selector and the SWD protocol"
@@ -164,7 +183,7 @@
       (let [rig (start-fixture! directory "connect")
             pids (into {} (map (fn [name] [name (fixture/await-pid! directory name)]))
                        (:connect fixture/helper-names))]
-        (is (every? some? (vals pids)) "both children run before the signal arrives")
+        (is (every? some? (vals pids)) "every owned child runs before the signal arrives")
         (stand-in/signal! "-TERM" (.pid (:proc rig)))
         (await-exit! rig)
         (is (not (str/includes? (:err @rig) "byte service"))

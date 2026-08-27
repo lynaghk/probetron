@@ -133,12 +133,15 @@
 (defn pty-bridge-command
   "Return the argv that presents one forwarded endpoint as a pseudo-terminal.
 
-   socat creates the link at once but waits for a host program to open the
-   terminal before it connects, so nothing occupies the one rig byte client
-   until somebody actually reads DUT bytes."
+   socat creates the link and connects the forwarded endpoint at once, so the
+   pseudo-terminal is already live when a host program opens it and the byte
+   path is established before the first write rather than racing it, exactly as
+   a direct serial device behaves. The DUT's own bytes then wait in the terminal
+   buffer until the program reads them, and retry lets the client open before
+   the rig listener it forwards has finished coming up."
   [socat link local-port]
   [socat
-   (str "PTY,link=" link ",raw,echo=0,wait-slave")
+   (str "PTY,link=" link ",raw,echo=0")
    (str "TCP:" client-loopback ":" local-port ",retry=" pty-retry-seconds ",interval=1")])
 
 (defn pty-link

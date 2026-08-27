@@ -13,9 +13,9 @@
             [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
-(declare connect! debug! required-resources with-rtt-upload! bridge! start-bridge! start-decoder!
-         start-server! swd-device announce-probe! channel-status! await-device! await-service!
-         services helper-options)
+(declare connect! debug! required-resources with-rtt-upload! bridge! start-holder! start-bridge!
+         start-decoder! start-server! swd-device announce-probe! channel-status! await-device!
+         await-service! services helper-options)
 
 (def operations
   "The long sessions that this shell carries out."
@@ -105,23 +105,38 @@
           (body path))))))
 
 (defn bridge!
-  "Open the byte channel, start both children, and hold the target while they live."
+  "Hold the DUT open, publish it on Pi loopback, and hold the target while they live."
   [operation session rtt-path]
   (let [{:keys [hardware] :as runtime} (:runtime session)]
     (or (channel-status! operation runtime)
-        (let [bridge (start-bridge! operation session)]
-          (when rtt-path (start-decoder! operation session rtt-path))
-          (await-service! bridge :byte hardware (:stopping? session))))))
+        (do
+          (start-holder! operation session)
+          (let [bridge (start-bridge! session)]
+            (when rtt-path (start-decoder! operation session rtt-path))
+            (await-service! bridge :byte hardware (:stopping? session)))))))
 
-(defn start-bridge!
-  "Start the rig byte listener that publishes the DUT channel on Pi loopback.
+(defn start-holder!
+  "Open the DUT channel once and hold it live for the whole session.
 
-   The listener keeps accepting for as long as the outer rig operation lives,
-   so one byte client after another reaches the same DUT."
+   The holder settles the board at the start of the session and keeps the DUT
+   bytes waiting on the loopback link, so a byte client attaches to a channel
+   that is already live rather than reopening the DUT itself. Cleanup owns it, so
+   it never outlives the session."
   [operation {:keys [runtime start-helper!]}]
   (let [{:keys [executables hardware]} runtime]
-    (start-helper! (hardware/byte-service-command
+    (start-helper! (hardware/channel-holder-command
                     executables hardware (hardware/channel-address hardware operation))
+                   helper-options)))
+
+(defn start-bridge!
+  "Start the rig byte listener that publishes the persistent DUT link on Pi loopback.
+
+   The listener keeps accepting for as long as the outer rig operation lives, so
+   one byte client after another reaches the same live channel that the holder
+   keeps open."
+  [{:keys [runtime start-helper!]}]
+  (let [{:keys [executables hardware]} runtime]
+    (start-helper! (hardware/byte-service-command executables hardware)
                    helper-options)))
 
 (defn start-decoder!

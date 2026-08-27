@@ -70,7 +70,7 @@
       (let [link (pty-link (str out))]
         (is (some? link) "the client prints the pseudo-terminal path")
         (is (= [(fixture/program client "socat")
-                (str "PTY,link=" link ",raw,echo=0,wait-slave")
+                (str "PTY,link=" link ",raw,echo=0")
                 "TCP:127.0.0.1:45678,retry=30,interval=1"]
                (fixture/recorded-argv client "socat"))
             "the helper bridges the endpoint that the client printed")

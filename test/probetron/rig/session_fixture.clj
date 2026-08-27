@@ -25,7 +25,7 @@
 
 (def helper-names
   "The stand-ins that replace the owned children of each long session."
-  {:connect ["bridge" "bridge-child" "rtt" "rtt-child"]
+  {:connect ["holder" "holder-child" "bridge" "bridge-child" "rtt" "rtt-child"]
    :debug ["dap" "dap-child"]})
 
 (defn -main
@@ -61,7 +61,8 @@
                         :swd-spi-device (path "spidev_swd*")
                         :gpio-chip (path "gpiochip0")
                         :uart-device (path "ttyAMA0")
-                        :usb-device (path "probetron-dut")}
+                        :usb-device (path "probetron-dut")
+                        :dut-link (path "dut")}
                        hardware)
       :filesystem (or filesystem {})
       :stdin (fn [] (upload-stream directory stdin))
@@ -132,13 +133,17 @@
 (defn helper-name
   "Name the appliance helper that one owned argv starts, or nil when it starts none.
 
-   Both probe-rs sessions run the same executable, so the verb tells the RTT
-   decoder and the DAP server apart."
+   Both socat children and both probe-rs children run the same executable, so an
+   address or a verb tells them apart: the holder mirrors the DUT to a
+   pseudo-terminal while the byte listener accepts on a TCP port, and the DAP
+   server names its verb where the RTT decoder attaches."
   [directory argv]
   (when (< 1 (count argv))
     (condp = (second argv)
-      (str (fs/path directory "socat")) "bridge"
-      (str (fs/path directory "probe-rs")) (if (= "dap-server" (nth argv 2 nil)) "dap" "rtt")
+      (str (fs/path directory "socat"))
+      (if (some #(str/starts-with? % "TCP-LISTEN") argv) "bridge" "holder")
+      (str (fs/path directory "probe-rs"))
+      (if (= "dap-server" (nth argv 2 nil)) "dap" "rtt")
       nil)))
 
 (defn stand-in-command
