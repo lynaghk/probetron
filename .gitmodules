@@ -1,0 +1,3 @@
+[submodule "vendor/probe-rs"]
+	path = vendor/probe-rs
+	url = g:probe-rs
