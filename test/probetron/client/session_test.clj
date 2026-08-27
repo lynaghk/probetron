@@ -73,6 +73,28 @@
                (last (recorded-argv client))))
         (is (not-any? #(str/includes? % (str (fs/file-name elf))) (recorded-argv client)))))))
 
+(deftest a-relayed-operation-frames-the-rig-output-with-its-command-and-outcome
+  (with-client! {}
+    (fn [client]
+      (let [{:keys [err]} (run-client! client {:operation :reset :host "pi.lab"})]
+        (is (str/includes? err "probetron rig running: sudo -n /usr/local/sbin/probetron-rig reset")
+            "the command banner names where the rig output begins")
+        (is (str/includes? err "probetron rig reset finished")
+            "the outcome line names where the rig output ends")))))
+
+(deftest a-failed-relayed-operation-names-the-rig-and-the-failing-status
+  (with-client! {:exit op/exit-failure
+                 :err "Error: An error with the flashing procedure has occurred.\n"}
+    (fn [client]
+      (let [elf (elf-file client)
+            {:keys [exit err calls]} (run-client! client {:operation :flash :host "pi.lab"
+                                                          :chip "RP235x" :speed-khz 4000 :elf elf})]
+        (is (= op/exit-failure exit))
+        (is (str/includes? (:err (:result (first @calls))) "Error: An error with the flashing procedure")
+            "the rig probe-rs diagnostic reaches the client untouched")
+        (is (str/includes? err "probetron rig flash failed with exit 1")
+            "the outcome line marks the failure as the rig's, not the client's")))))
+
 (deftest the-rig-status-and-diagnostics-reach-the-client
   (with-client! {:exit op/exit-busy :err "probetron-rig: the target is busy with connect\n"}
     (fn [client]

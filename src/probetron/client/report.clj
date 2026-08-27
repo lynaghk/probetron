@@ -6,25 +6,23 @@
    as the rig wrote it."
   (:require [clojure.string :as str]))
 
-(declare render-text)
-
 (defn information
   "Assemble the information record of one client and the rig it asked."
   [{:keys [probetron babashka key rig]}]
   {:client {:probetron probetron :babashka babashka :key key}
    :rig rig})
 
-(defn render
-  "Render an information record as human text or as EDN."
-  [report format]
-  (case format
-    :edn (pr-str report)
-    :text (render-text report)))
+(defn render-edn
+  "Render one whole information record as EDN."
+  [report]
+  (pr-str report))
 
-(defn render-text
-  "Render an information record for a person, client facts first."
-  [{:keys [client rig]}]
-  (str/join "\n" [(str "client probetron: " (:probetron client))
-                  (str "client babashka: " (:babashka client))
-                  (str "client key: " (:key client))
-                  rig]))
+(defn render-client-text
+  "Render the client facts for a person, one fact to a line.
+
+   These print before the rig answers, so the rig report that follows joins
+   them into the same text the combined form once wrote."
+  [{:keys [probetron babashka key]}]
+  (str/join "\n" [(str "client probetron: " probetron)
+                  (str "client babashka: " babashka)
+                  (str "client key: " key)]))

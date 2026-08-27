@@ -18,9 +18,10 @@
             [probetron.version :as version])
   (:import (java.net InetAddress ServerSocket)))
 
-(declare invoke! report-transport-failure! report-information! rig-information upload environment
-         default-runtime default-executables default-filesystem write-key!
-         reserve-port! make-link-directory! fail! warn!)
+(declare invoke! relay! report-outcome! report-transport-failure! report-information!
+         report-text! report-edn! report-unreadable! announce-waiting! rig-information
+         upload environment default-runtime default-executables default-filesystem
+         write-key! reserve-port! make-link-directory! fail! warn!)
 
 (def transport-failure
   "The status that SSH itself returns when it never reached the rig."
@@ -33,7 +34,27 @@
     (cond
       error (fail! error)
       (= :info (:operation operation)) (report-information! operation path runtime)
-      :else (:exit (invoke! operation path runtime {:out :inherit :err :inherit})))))
+      :else (relay! operation path runtime))))
+
+(defn relay!
+  "Announce the rig command, relay its output untouched, and name the outcome.
+
+   The announcement and the outcome are the only lines Probetron writes to a
+   relayed operation, so a person sees where the rig probe-rs output starts and
+   where it ends, and reads every line between the two as the rig itself."
+  [operation key-path runtime]
+  (announce-waiting! operation)
+  (let [exit (:exit (invoke! operation key-path runtime {:out :inherit :err :inherit}))]
+    (report-outcome! operation exit)
+    exit))
+
+(defn report-outcome!
+  "Echo to stderr whether the relayed rig operation finished or failed, and with what status."
+  [operation exit]
+  (binding [*out* *err*]
+    (println (if (zero? exit)
+               (str "probetron rig " (name (:operation operation)) " finished")
+               (str "probetron rig " (name (:operation operation)) " failed with exit " exit)))))
 
 (defn invoke!
   "Run one rig operation over SSH and return what the process answered.
@@ -66,19 +87,55 @@
    The rig answers in the format the client asked for, so text stays readable
    and EDN keeps stable keys on both sides."
   [operation key-path runtime]
+  (let [client {:probetron version/probetron-version
+                :babashka (System/getProperty "babashka.version")
+                :key key-path}]
+    (if (= :edn (:format operation))
+      (report-edn! operation client key-path runtime)
+      (report-text! operation client key-path runtime))))
+
+(defn report-text!
+  "Print the client facts, announce the remote command, and add the rig report.
+
+   The client facts and the command reach the person before the probe runs, so
+   a probe that blocks on an absent target shows the client is only waiting."
+  [operation client key-path runtime]
+  (println (report/render-client-text client))
+  (flush)
+  (announce-waiting! operation)
   (let [{:keys [exit out]} (invoke! operation key-path runtime {:out :string :err :inherit})
-        rig (rig-information out (:format operation))]
+        rig (rig-information out :text)]
     (if rig
-      (do (println (report/render (report/information {:probetron version/probetron-version
-                                                       :babashka (System/getProperty "babashka.version")
-                                                       :key key-path
-                                                       :rig rig})
-                                  (:format operation)))
+      (do (println rig) exit)
+      (report-unreadable! operation out exit))))
+
+(defn report-edn!
+  "Announce the remote command and print one atomic EDN record when the rig answers.
+
+   Half a map does not parse, so EDN waits for the whole rig report before it
+   joins the client facts and prints once."
+  [operation client key-path runtime]
+  (announce-waiting! operation)
+  (let [{:keys [exit out]} (invoke! operation key-path runtime {:out :string :err :inherit})
+        rig (rig-information out :edn)]
+    (if rig
+      (do (println (report/render-edn (report/information (assoc client :rig rig))))
           exit)
-      (do (print out)
-          (flush)
-          (warn! (str "the rig at " (:host operation) " returned no readable information"))
-          (if (zero? exit) op/exit-failure exit)))))
+      (report-unreadable! operation out exit))))
+
+(defn announce-waiting!
+  "Echo to stderr the remote command whose response the client now waits for."
+  [operation]
+  (binding [*out* *err*]
+    (println (str "probetron rig running: " (command/remote-command operation)))))
+
+(defn report-unreadable!
+  "Keep whatever the rig said, warn, and return a failing status."
+  [operation out exit]
+  (print out)
+  (flush)
+  (warn! (str "the rig at " (:host operation) " returned no readable information"))
+  (if (zero? exit) op/exit-failure exit))
 
 (defn rig-information
   "Return what the rig reported about itself, or nil when it reported nothing readable."
