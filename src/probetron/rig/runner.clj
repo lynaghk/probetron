@@ -294,6 +294,7 @@
    :kill "/bin/kill"
    :cat "/bin/cat"
    :noop "/bin/true"
+   :script hardware/script-executable
    :probe-rs hardware/probe-rs-executable
    :gpioset hardware/gpioset-executable
    :socat hardware/socat-executable})

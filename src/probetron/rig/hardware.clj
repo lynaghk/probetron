@@ -5,14 +5,22 @@
    and limit is a constant here, and so is the argv of every hardware command
    the rig runs.
    Nothing here opens a device, a file, or a process."
-  (:require [probetron.operation :as op]))
+  (:require [clojure.string :as str]
+            [probetron.operation :as op]))
 
-(declare probe-command spi-probe-selector resources)
+(declare probe-command with-pty shell-quote spi-probe-selector resources)
 
 ;; The absolute path of every hardware executable of the image.
 (def probe-rs-executable "/usr/local/bin/probe-rs")
 (def gpioset-executable "/usr/bin/gpioset")
 (def socat-executable "/usr/bin/socat")
+
+;; script comes from bsdutils, an Essential package, so the image always carries it.
+(def script-executable "/usr/bin/script")
+
+;; The size to give the forwarded pseudo-terminal, since it otherwise defaults to zero.
+(def pty-rows 24)
+(def pty-cols 80)
 
 ;; The one target slot, wired as the README table describes.
 (def spi-device "/dev/spidev0.0")
@@ -91,10 +99,17 @@
   (conj (probe-command executables hardware "info" {:speed-khz speed-khz}) "--verbose"))
 
 (defn download-command
-  "Return the argv that downloads one uploaded ELF and verifies it on the target."
+  "Return the argv that downloads one uploaded ELF, verifies it, and shows its progress.
+
+   probe-rs draws its erase, program, and verify progress bars only when its
+   output is a terminal, but the rig streams that output down a plain SSH pipe,
+   so probe-rs would otherwise write nothing until the whole download finished.
+   `script` gives probe-rs a pseudo-terminal, so the bars reach the client
+   frame by frame across the roughly forty-five seconds the download takes."
   [executables hardware {:keys [chip speed-khz path]}]
-  (conj (probe-command executables hardware "download" {:chip chip :speed-khz speed-khz})
-        "--verify" path))
+  (with-pty (:script executables)
+    (conj (probe-command executables hardware "download" {:chip chip :speed-khz speed-khz})
+          "--verify" path)))
 
 (defn rtt-command
   "Return the argv that decodes RTT of the firmware the target already runs.
@@ -169,9 +184,14 @@
     :usb :usb-device))
 
 (defn erase-command
-  "Return the argv that erases the whole target once."
+  "Return the argv that erases the whole target once and shows its progress.
+
+   probe-rs draws an erase progress bar the same way it draws the download bars,
+   so erase runs under `script` too and its bar reaches the client rather than
+   nothing until the erase finishes."
   [executables hardware {:keys [chip speed-khz]}]
-  (probe-command executables hardware "erase" {:chip chip :speed-khz speed-khz}))
+  (with-pty (:script executables)
+    (probe-command executables hardware "erase" {:chip chip :speed-khz speed-khz})))
 
 (defn probe-command
   "Return one probe-rs argv with the explicit probe, protocol, chip, and speed."
@@ -179,6 +199,32 @@
   (cond-> [probe-rs verb "--probe" probe-selector "--protocol" swd-protocol]
     chip (into ["--chip" chip])
     speed-khz (into ["--speed" (str speed-khz)])))
+
+(defn with-pty
+  "Wrap one command so it runs under a pseudo-terminal that forwards its output.
+
+   `script` runs the command with a pseudo-terminal for its standard output and
+   error, copies every byte the command writes to script's own standard output,
+   and, under -e, returns the command's own exit status. -q drops script's own
+   banner, and the /dev/null typescript discards the second copy script keeps.
+   A program that prints only for a terminal therefore prints down a pipe too.
+
+   The client reaches the rig without a terminal, so `script` cannot copy a size
+   onto the new pseudo-terminal and it opens at zero rows and columns, at which
+   probe-rs draws its bars but breaks the line between one finished bar and the
+   next. `stty` sizes the pseudo-terminal before probe-rs starts, so every bar
+   lands on its own line, and a semicolon keeps probe-rs's own exit status."
+  [script argv]
+  (let [sized (str "stty rows " pty-rows " cols " pty-cols "; "
+                   (str/join " " (map shell-quote argv)))]
+    [script "-q" "-e" "-c" sized "/dev/null"]))
+
+(defn shell-quote
+  "Quote one token so the shell that -c starts reads it as exactly one word."
+  [token]
+  (if (re-matches #"[A-Za-z0-9._/:=@%+,-]+" token)
+    token
+    (str "'" (str/replace token "'" "'\\''") "'")))
 
 (defn reset-command
   "Return the argv that pulses the RUN line of the target.

@@ -10,7 +10,7 @@
             [probetron.version :as version])
   (:import (java.io ByteArrayInputStream PipedInputStream StringWriter)))
 
-(declare with-rig! run-rig! appliance! by-command command-name
+(declare with-rig! run-rig! appliance! by-command command-name probe-argv
          elf put8! put16! put32! flash-operation probe-rs gpioset)
 
 (def flash-operation
@@ -80,12 +80,15 @@
         (with-rig! flash-operation
                     {:stdin image
                      :responses (fn [argv]
-                                  (when (= "download" (second argv))
-                                    (reset! uploaded (fs/read-all-bytes (last argv))))
+                                  (when (= :download (command-name argv))
+                                    (reset! uploaded (fs/read-all-bytes (last (probe-argv argv)))))
                                   {:exit 0})})
-        [download reset] calls]
+        [download-call reset] calls
+        download (probe-argv download-call)]
     (is (= op/exit-ok exit))
     (is (= 2 (count calls)) "flash downloads once and resets once")
+    (is (= "script" (fs/file-name (first download-call)))
+        "flash runs probe-rs under a pseudo-terminal so its progress reaches the client")
     (is (= [(probe-rs directory) "download" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
             "--chip" "RP235x" "--speed" "4000" "--verify"]
            (vec (butlast download))))
@@ -102,7 +105,7 @@
                     {:stdin (elf)
                      :responses (by-command {:download {:exit 2 :err "Error: verification failed"}})})]
     (is (= 2 exit) "the rig gives back the status probe-rs returned")
-    (is (= ["download"] (mapv second calls)))
+    (is (= [:download] (mapv command-name calls)))
     (is (empty? uploads))))
 
 (deftest flash-refuses-a-malformed-elf-before-probe-rs-opens-the-target
@@ -154,9 +157,11 @@
         (with-rig! {:operation :erase :chip "RP235x" :speed-khz 1000}
                     {:responses (by-command {:erase {:exit 3 :err "Error: erase failed"}})})]
     (is (= 3 exit) "the rig gives back the status probe-rs returned")
+    (is (= "script" (fs/file-name (ffirst calls)))
+        "erase runs probe-rs under a pseudo-terminal so its progress reaches the client")
     (is (= [[(probe-rs directory) "erase" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
              "--chip" "RP235x" "--speed" "1000"]]
-           calls)
+           (mapv probe-argv calls))
         "a failed erase must not run a second destructive attempt")))
 
 (deftest reset-pulses-the-run-line-low-and-releases-it
@@ -235,12 +240,25 @@
   (fn [argv] (get responses (command-name argv) {:exit 0})))
 
 (defn command-name
-  "Name the command that one argv runs."
+  "Name the command that one argv runs, seeing through a pseudo-terminal wrapper."
   [argv]
-  (let [executable (fs/file-name (first argv))]
+  (let [argv (probe-argv argv)
+        executable (fs/file-name (first argv))]
     (if (= "probe-rs" executable)
       (keyword (str/replace (second argv) #"^--" ""))
       (keyword executable))))
+
+(defn probe-argv
+  "Return the probe-rs argv inside a `script` wrapper, or the argv unchanged.
+
+   `hardware/download-command` runs probe-rs under `script` so its progress bar
+   reaches a terminal, so the recorded call carries the probe-rs command as the
+   -c string of `script`, behind the `stty` that sizes the pseudo-terminal,
+   rather than as its own argv."
+  [argv]
+  (if (= "script" (fs/file-name (first argv)))
+    (-> (nth argv 4) (str/replace #"^stty[^;]*; " "") (str/split #" "))
+    argv))
 
 (defn probe-rs
   "Return the fake probe-rs of a temporary appliance."
