@@ -49,6 +49,26 @@
       (is (= operation/exit-usage exit))
       (is (str/includes? err "--chip")))))
 
+(deftest version-names-probetrons-own-checkout-not-the-callers
+  (testing "run from another git repo, the version still names probetron's commit and path"
+    (let [launcher (str (fs/absolutize (fs/path "bin" "probetron")))
+          head (str/trim (:out (process/shell {:out :string} "git" "rev-parse" "--short" "HEAD")))
+          foreign (fs/create-temp-dir {:prefix "foreign-repo"})]
+      (try
+        (process/shell {:dir (str foreign)} "git" "init" "-q")
+        (process/shell {:dir (str foreign)}
+                       "git" "-c" "user.email=t@t" "-c" "user.name=t"
+                       "commit" "--allow-empty" "-q" "-m" "foreign")
+        (let [{:keys [exit out]} (process/shell {:out :string :err :string :continue true
+                                                 :dir (str foreign)}
+                                                launcher "--version")]
+          (is (= operation/exit-ok exit))
+          (is (str/includes? out head)
+              "the stamp names probetron's HEAD, not the caller's repository")
+          (is (str/includes? out "probetron")
+              "the stamp names the probetron checkout it runs from"))
+        (finally (fs/delete-tree foreign))))))
+
 (deftest entry-points-run-from-an-installed-tree
   (let [root (fs/create-temp-dir {:prefix "probetron-install"})]
     (try

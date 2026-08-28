@@ -212,7 +212,8 @@
    :source :generated
    :kind :file
    :mode file-mode
-   :content (.getBytes (str (pr-str (assoc (version/git-stamp root built) :version version)) "\n")
+   :content (.getBytes (str (pr-str (assoc (version/git-stamp root)
+                                           :version version :built built)) "\n")
                        "UTF-8")})
 
 (defn directories

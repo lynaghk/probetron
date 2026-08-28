@@ -3,16 +3,17 @@
 
    `probetron-version` is the release, and it must stay equal to the VERSION
    file at the project root.
-   `describe` reads the fuller stamp that `bb package` bakes into the archive:
-   the commit it was built from, whether that tree was dirty, and when.
-   An installed tree reads the baked stamp, and a raw checkout asks git, so the
-   same command names a release on a rig and a working tree on a bench."
+   `describe` reads the fuller stamp that names one build.
+   An installed tree reads the stamp that `bb package` baked in: the commit it
+   was built from, whether that tree was dirty, and when.
+   A raw checkout asks git about probetron's own sources and names the path it
+   runs from, not a build time, because a checkout was never built."
   (:require [babashka.process :as process]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
-(declare from-resource git-stamp from-git git)
+(declare from-resource git-stamp from-git project-root git)
 
 (def probetron-version "0.1.0")
 
@@ -24,7 +25,8 @@
 (defn describe
   "Return the build stamp of this Probetron.
 
-   The stamp is {:version v :commit sha :dirty? bool :built iso-8601}.
+   A packaged stamp is {:version v :commit sha :dirty? bool :built iso-8601}.
+   A checkout stamp is {:version v :commit sha :dirty? bool :root path}.
    The baked stamp of an installed tree wins, and a checkout that carries none
    falls back to git."
   []
@@ -33,23 +35,25 @@
 (defn stamp-line
   "Render one build stamp as the single line that names a build to a person.
 
-   The form is '0.1.0 (f7749b0, 2026-08-26T12:00:00Z)', and a dirty tree marks
-   its commit 'f7749b0-dirty'."
-  [{:keys [version commit dirty? built]}]
+   A packaged build reads '0.1.0 (f7749b0, 2026-08-26T12:00:00Z)', a checkout
+   reads '0.1.0 (f7749b0, /home/dev/probetron)', and a dirty tree marks its
+   commit 'f7749b0-dirty'."
+  [{:keys [version commit dirty? built root]}]
   (str version
        " (" commit (when dirty? "-dirty")
-       (when built (str ", " built)) ")"))
+       (when built (str ", " built))
+       (when root (str ", " root))
+       ")"))
 
 (defn git-stamp
-  "Return the build stamp of the git checkout at root, timed at built.
+  "Return the release, commit, and dirtiness of the git checkout at root.
 
    A tree that git cannot read still yields a stamp, because a build names
    itself even where no repository does."
-  [root built]
+  [root]
   {:version probetron-version
    :commit (or (git root "rev-parse" "--short" "HEAD") "unknown")
-   :dirty? (boolean (seq (git root "status" "--porcelain")))
-   :built built})
+   :dirty? (boolean (seq (git root "status" "--porcelain")))})
 
 (defn from-resource
   "Return the stamp that bb package baked into the archive, or nil in a checkout."
@@ -58,9 +62,25 @@
     (edn/read-string (slurp url))))
 
 (defn from-git
-  "Return a live stamp from the git checkout of the current directory."
+  "Return a live stamp from probetron's own git checkout, named by its path.
+
+   The stamp must name probetron's tree, not the directory the operator ran
+   from, so it asks git about probetron's own root."
   []
-  (git-stamp "." (now)))
+  (let [root (project-root)]
+    (assoc (git-stamp root) :root root)))
+
+(defn project-root
+  "Return the path of probetron's own checkout, or \".\" when it cannot be found.
+
+   probetron finds its root from version.clj on the classpath, which sits at
+   root/src/probetron/version.clj, so the answer holds wherever the operator
+   ran the command from."
+  []
+  (let [url (io/resource "probetron/version.clj")]
+    (if (and url (= "file" (.getProtocol url)))
+      (-> url .getPath io/file .getParentFile .getParentFile .getParentFile str)
+      ".")))
 
 (defn git
   "Return the trimmed output of one git command in a directory, or nil when it fails."
