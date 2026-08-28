@@ -718,10 +718,11 @@ probe-rs erase    --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --spee
 probe-rs attach   --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20 <upload>
 probe-rs dap-server --port 50000 --ip 127.0.0.1
 gpioset --chip /dev/gpiochip0 --hold-period 100ms 26=0
-socat TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1 FILE:/dev/ttyAMA0,raw,echo=0,b115200
+socat TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1 FILE:/dev/ttyAMA0,raw,echo=0,o-noctty,b115200
 ```
 
-`max-children=1` allows one byte client at a time, and `fork` accepts the next client as soon as that one leaves and opens the channel address again, so a DUT that re-enumerated over USB resolves the stable path once more.
+`max-children=1` allows one byte client at a time, and `fork` opens the channel address anew for each client and closes it when that client leaves, so the rig holds no channel and buffers no bytes between clients.
+A DUT that re-enumerates over USB ends the one client that held it, exactly as unplugging a cable would, and the next client resolves the stable path once more.
 A missing SPI device, GPIO chip, UART, USB device, or executable stops the operation before any process starts, and the diagnostic names the resource and its repair.
 
 ### The image

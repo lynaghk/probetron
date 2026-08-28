@@ -24,61 +24,37 @@
 (def rtt
   {:chip "RP235x" :speed-khz 1000 :elf :stdin})
 
-(deftest the-byte-service-listens-on-pi-loopback-alone-and-serves-one-client-at-a-time
+(deftest the-byte-service-opens-the-dut-itself-and-serves-one-client-at-a-time
   (with-running-session! uart-operation {}
     (fn [{:keys [calls directory]}]
       (let [{:keys [argv opts]} (helper-call @calls "bridge")]
         (is (= [(socat directory)
                 "TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1"
-                (str "FILE:" (device directory "dut") ",raw,echo=0")]
+                (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b115200")]
                argv)
-            "the listener bridges every client to the live link, not the DUT")
+            "the listener opens the DUT itself on each accepted connection, holding no link between clients")
         (testing "the listener carries structured bytes on the service alone"
           (is (= {:out :inherit :err :inherit} opts))
           (is (not-any? #{"-" "STDIO" "STDIN"} argv)))))))
-
-(defn holder-arg
-  "Return the holder argument that starts with one prefix."
-  [argv prefix]
-  (first (filter #(str/starts-with? % prefix) argv)))
-
-(deftest the-holder-mirrors-the-dut-to-a-live-link-and-reopens-it-on-a-re-enumeration
-  (with-running-session! uart-operation {}
-    (fn [{:keys [calls directory]}]
-      (let [{:keys [argv opts]} (helper-call @calls "holder")]
-        (is (some #{(socat directory)} argv) "the holder runs socat")
-        (is (= (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b115200")
-               (holder-arg argv "FILE:"))
-            "and opens the DUT")
-        (is (= (str "PTY,link=" (device directory "dut") ",raw,echo=0")
-               (holder-arg argv "PTY,link="))
-            "and mirrors it to the loopback link")
-        (is (str/includes? (nth argv 2) "while")
-            "in a loop, so a DUT that re-enumerates mid-session reopens rather than ends")
-        (is (= {:out :inherit :err :inherit} opts))))))
 
 (deftest the-uart-channel-takes-the-requested-baud
   (with-running-session! (assoc uart-operation :baud 921600) {}
     (fn [{:keys [calls directory]}]
       (is (= (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b921600")
-             (holder-arg (:argv (helper-call @calls "holder")) "FILE:"))
-          "the holder that opens the DUT carries the requested baud"))))
+             (last (:argv (helper-call @calls "bridge"))))
+          "the byte service that opens the DUT carries the requested baud"))))
 
-(deftest the-usb-channel-opens-the-stable-device-path-once-and-holds-it
+(deftest the-usb-channel-opens-the-stable-device-path-on-each-connection
   (with-running-session! usb-operation {}
     (fn [{:keys [calls directory]}]
-      (let [holder (:argv (helper-call @calls "holder"))
-            bridge (:argv (helper-call @calls "bridge"))]
-        (is (= (str "FILE:" (device directory "probetron-dut") ",raw,echo=0,o-noctty")
-               (holder-arg holder "FILE:"))
-            "the holder opens the stable DUT path for the whole session")
-        (is (= (str "PTY,link=" (device directory "dut") ",raw,echo=0")
-               (holder-arg holder "PTY,link="))
-            "and mirrors it to a loopback link that clients share")
+      (let [bridge (:argv (helper-call @calls "bridge"))]
         (is (str/includes? (second bridge) "fork")
-            "the listener still forks one child per accepted connection")
-        (is (= (str "FILE:" (device directory "dut") ",raw,echo=0") (last bridge))
-            "but every client bridges to the live link, not the DUT")))))
+            "the listener forks one child per accepted connection")
+        (is (str/includes? (second bridge) "max-children=1")
+            "and serves one client at a time")
+        (is (= (str "FILE:" (device directory "probetron-dut") ",raw,echo=0,o-noctty,b115200")
+               (last bridge))
+            "and each child opens the stable DUT path directly at a nonzero rate that holds DTR, holding no state between clients")))))
 
 (deftest the-usb-channel-waits-for-the-dut-to-enumerate
   (let [directory (temporary-directory)
@@ -89,10 +65,10 @@
         (fs/delete-if-exists appearing)
         (future (Thread/sleep 300) (fs/create-file appearing))
         (let [exit (future (runner/execute! (assoc usb-operation :usb-wait-seconds 10) runtime))]
-          (is (some? (fixture/await-pid! directory "holder"))
-              "the holder opens the DUT once it enumerates")
-          (is (= (str "FILE:" appearing ",raw,echo=0,o-noctty")
-                 (holder-arg (:argv (helper-call @calls "holder")) "FILE:")))
+          (is (some? (fixture/await-pid! directory "bridge"))
+              "the byte service starts once the DUT enumerates")
+          (is (= (str "FILE:" appearing ",raw,echo=0,o-noctty,b115200")
+                 (last (:argv (helper-call @calls "bridge")))))
           (fixture/release! directory)
           (is (= op/exit-ok (deref exit 15000 :timeout)))))
       (finally (fixture/stop-all! directory) (fs/delete-tree directory)))))
@@ -139,6 +115,33 @@
         (fixture/stop-all! directory)
         (fs/delete-tree directory)))))
 
+(deftest a-dut-that-re-enumerates-mid-session-is-recorded-and-reported
+  (let [directory (temporary-directory)
+        device (fs/path directory "probetron-dut")
+        calls (atom [])
+        runtime (fixture/appliance! directory calls {})
+        session (future (runner/execute! usb-operation runtime))]
+    (try
+      (is (some? (fixture/await-pid! directory "bridge")) "the session must run")
+      ;; The DUT drops and returns while a byte client is attached, exactly as a
+      ;; USB re-enumeration looks to the rig.
+      (fs/delete-if-exists device)
+      (Thread/sleep 400)
+      (fs/create-file device)
+      (Thread/sleep 400)
+      (fixture/release! directory)
+      (is (= op/exit-ok (deref session 15000 :timeout)))
+      (let [events (mapv :event (dut-log-events directory))]
+        (is (some #{:dut-link-lost} events)
+            "the record marks the DUT going away under the connected client")
+        (is (some #{:dut-link-up} events)
+            "and marks it returning, so a re-enumeration is legible after the fact"))
+      (finally
+        (fixture/release! directory)
+        (deref session 15000 :timeout)
+        (fixture/stop-all! directory)
+        (fs/delete-tree directory)))))
+
 (deftest a-missing-uart-device-names-itself-and-the-repair
   (let [{:keys [exit err calls]} (run-session! uart-operation {:remove ["ttyAMA0"]})]
     (is (= op/exit-unavailable exit))
@@ -166,7 +169,7 @@
     (fn [{:keys [calls directory]}]
       (let [bridge (helper-call @calls "bridge")
             decoder (helper-call @calls "rtt")]
-        (is (= 3 (count @calls)) "the holder, the bridge, and the decoder are three owned children")
+        (is (= 2 (count @calls)) "the bridge and the decoder are the two owned children")
         (is (stand-in/alive? (fixture/await-pid! directory "bridge")))
         (is (stand-in/alive? (fixture/await-pid! directory "rtt")))
         (testing "the decoder names the Linux SPI selector and the SWD protocol"

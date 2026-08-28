@@ -13,7 +13,7 @@
             [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
-(declare connect! debug! required-resources with-rtt-upload! bridge! start-holder! start-bridge!
+(declare connect! debug! required-resources with-rtt-upload! bridge! watch-dut-link! start-bridge!
          start-decoder! start-server! swd-device announce-probe! channel-status! await-device!
          await-service! services helper-options)
 
@@ -108,7 +108,7 @@
           (body path))))))
 
 (defn bridge!
-  "Hold the DUT open, publish it on Pi loopback, and hold the target while they live."
+  "Publish the DUT on Pi loopback, watch the DUT link, and hold the target while the listener lives."
   [operation session rtt-path]
   (let [{:keys [hardware] :as runtime} (:runtime session)]
     (or (channel-status! operation runtime)
@@ -116,38 +116,53 @@
           ;; Watch the client now that its upload, if any, is read: whatever is
           ;; left on standard input is the tether, and its end frees the target.
           ((:watch-client! session))
-          (start-holder! operation session)
-          (let [bridge (start-bridge! session)]
+          (watch-dut-link! operation session)
+          (let [bridge (start-bridge! operation session)]
             (when rtt-path (start-decoder! operation session rtt-path))
             (await-service! bridge :byte hardware (:stopping? session)))))))
 
-(defn start-holder!
-  "Hold the DUT channel live for the whole session and reopen it if the DUT re-enumerates.
+(defn watch-dut-link!
+  "Report to the operator, and record, when the DUT goes away and returns under a client.
 
-   The holder settles the board at the start of the session and keeps the DUT
-   bytes waiting on the loopback link, so a byte client attaches to a channel
-   that is already live rather than reopening the DUT itself. A reset or a
-   re-enumeration that drops the DUT mid-session reopens the mirror rather than
-   ending it, exactly as a cable reconnects. Cleanup owns it, so it never
-   outlives the session."
-  [operation {:keys [runtime start-helper!]}]
-  (let [{:keys [executables hardware]} runtime]
-    (start-helper! (hardware/channel-holder-command
-                    executables hardware
-                    (hardware/resource-path runtime (hardware/channel-resource (:channel operation)))
-                    (hardware/channel-address hardware operation)
-                    (get-in runtime [:paths :dut-log]))
-                   helper-options)))
+   The byte listener opens the DUT per client and lets a re-enumeration end the
+   one child that held it, so a person who loses a byte client needs to know the
+   DUT went away and not the network. This daemon polls the channel device: when
+   it disappears it warns the operator and records :dut-link-lost, and when it
+   returns it records :dut-link-up. A deliberate re-enumeration drop reads as the
+   DUT that way, and the daemon touches no hardware, so it never holds the
+   channel the listener deliberately does not."
+  [operation {:keys [runtime stopping?]}]
+  (let [{:keys [filesystem]} runtime
+        path (hardware/resource-path runtime (hardware/channel-resource (:channel operation)))
+        present? (fn [] (boolean ((:exists? filesystem) path)))
+        watch (fn []
+                (loop [was? (present?)]
+                  ;; Check for the stop after the wait, not before it: a session
+                  ;; that ends must not read a phantom departure out of a device
+                  ;; path that shutdown itself removed.
+                  (Thread/sleep device-poll-ms)
+                  (when-not (stopping?)
+                    (let [now? (present?)]
+                      (when (not= now? was?)
+                        (if now?
+                          (do (runner/log-event! runtime :dut-link-up {:channel (:channel operation)})
+                              (runner/warn! (str "the DUT returned on " path "; reconnect the byte client")))
+                          (do (runner/log-event! runtime :dut-link-lost {:channel (:channel operation)})
+                              (runner/warn! (str "the DUT went away on " path
+                                                 "; the byte client was dropped with it"
+                                                 " and can reconnect once the DUT returns")))))
+                      (recur now?)))))]
+    (.start (doto (Thread. ^Runnable watch "probetron-dut-watch") (.setDaemon true)))))
 
 (defn start-bridge!
-  "Start the rig byte listener that publishes the persistent DUT link on Pi loopback.
+  "Start the rig byte listener that opens the DUT on Pi loopback for one client at a time.
 
    The listener keeps accepting for as long as the outer rig operation lives, so
-   one byte client after another reaches the same live channel that the holder
-   keeps open."
-  [{:keys [runtime start-helper!]}]
+   one byte client after another opens the same DUT afresh, and none of them
+   inherits bytes another left behind."
+  [operation {:keys [runtime start-helper!]}]
   (let [{:keys [executables hardware]} runtime]
-    (start-helper! (hardware/byte-service-command executables hardware)
+    (start-helper! (hardware/byte-service-command executables hardware operation)
                    helper-options)))
 
 (defn start-decoder!

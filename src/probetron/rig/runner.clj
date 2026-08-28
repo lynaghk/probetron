@@ -208,9 +208,10 @@
 (defn report-log!
   "Print the DUT record the rig keeps, or say it has none yet.
 
-   The record is what every owned session and the channel holder appended, so an
-   operator reads the history of one DUT — the sessions the rig ran and the USB
-   link that came and went under them — without an interactive login."
+   The record is what every owned session appended, plus the DUT link events a
+   connect session records, so an operator reads the history of one DUT — the
+   sessions the rig ran and the USB link that came and went under them — without
+   an interactive login."
   [_operation {:keys [paths filesystem]}]
   (if-let [text (not-empty ((:read-file filesystem) (:dut-log paths)))]
     (print text)

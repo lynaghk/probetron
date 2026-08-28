@@ -8,7 +8,7 @@
   (:require [clojure.string :as str]
             [probetron.operation :as op]))
 
-(declare probe-command with-pty shell-quote spi-probe-selector resources)
+(declare probe-command with-pty shell-quote spi-probe-selector resources channel-address)
 
 ;; The absolute path of every hardware executable of the image.
 (def probe-rs-executable "/usr/local/bin/probe-rs")
@@ -32,13 +32,6 @@
 (def uart-device "/dev/ttyAMA0")
 (def usb-device "/dev/probetron-dut")
 
-(def dut-link
-  "The loopback pseudo-terminal that the holder keeps live for the whole session.
-
-   The holder opens the real DUT once and mirrors it here, so every byte client
-   bridges to this always-live link instead of opening the DUT itself."
-  "/run/probetron/dut")
-
 ;; The services that a locked session exposes on Pi loopback alone.
 (def loopback op/rig-loopback)
 (def byte-port op/rig-byte-port)
@@ -49,7 +42,9 @@
 
    It reuses the address, forks one child for every accepted connection, and
    allows one child at a time, so exactly one byte client is active and the
-   next one connects as soon as that client leaves."
+   next one connects as soon as that client leaves. Each child opens the DUT
+   itself and closes it on departure, so the rig holds no channel and buffers no
+   bytes between clients."
   "reuseaddr,fork,max-children=1")
 
 (def swd-protocol
@@ -77,7 +72,6 @@
    :run-gpio run-gpio
    :uart-device uart-device
    :usb-device usb-device
-   :dut-link dut-link
    :loopback loopback
    :byte-port byte-port
    :dap-port dap-port
@@ -140,67 +134,46 @@
   [device]
   (str spi-selector-prefix device))
 
-(def holder-loop
-  "The shell that keeps the DUT mirror live across a DUT re-enumeration.
-
-   socat mirrors the DUT to the loopback link, and this loop starts it again
-   whenever it ends, exactly as a direct USB cable reconnects when the board
-   re-enumerates. The loop waits for the device path before each mirror, so a
-   reset or a re-enumeration that drops the DUT for a moment costs the channel a
-   moment, not the whole session, and the device path is the udev symlink, so a
-   DUT that returns under a new tty name is still the one the holder reopens.
-   Each mirror brackets the DUT record with a link-up and a link-lost event, so
-   a re-enumeration the rig did not cause leaves the same visible mark a flash
-   does.
-   $1 is socat, $2 the DUT device path, $3 the DUT address, $4 the loopback
-   link, $5 the DUT record."
-  (str/join " "
-            ["stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; };"
-             "while :; do"
-             "if [ -e \"$2\" ]; then"
-             "printf '{:at #inst \"%s\" :event :dut-link-up}\\n' \"$(stamp)\" >> \"$5\";"
-             "\"$1\" \"$3\" \"$4\";"
-             "printf '{:at #inst \"%s\" :event :dut-link-lost}\\n' \"$(stamp)\" >> \"$5\";"
-             "fi;"
-             "sleep 0.5;"
-             "done"]))
-
-(defn channel-holder-command
-  "Return the argv that holds the DUT channel live all session and reopens it if the DUT re-enumerates.
-
-   The holder mirrors the DUT to a loopback pseudo-terminal, so the board
-   settles one connection at the start of the session and every byte client
-   after that attaches to a channel that is already live, exactly as a direct
-   USB cable behaves. Holding the DUT open keeps the board's own bytes waiting
-   on the link until a client reads them; reopening it on a re-enumeration keeps
-   a reset or a brownout mid-session from bricking the channel until the client
-   reconnects, and records each link that comes and goes."
-  [{:keys [socat]} {:keys [dut-link]} device address dut-log]
-  ["sh" "-c" holder-loop "probetron-holder"
-   socat device address (str "PTY,link=" dut-link ",raw,echo=0") dut-log])
-
 (defn byte-service-command
   "Return the argv of the rig byte listener.
 
-   socat accepts on Pi loopback alone and bridges every accepted connection to
-   the persistent link that the holder keeps open, so one client after another
-   reaches a channel that is already live rather than opening the DUT itself."
-  [{:keys [socat]} {:keys [loopback byte-port dut-link]}]
+   socat accepts on Pi loopback alone and forks one child per accepted
+   connection, and each child opens the DUT itself and closes it when the client
+   leaves. The rig therefore holds no channel between clients: a client that
+   connects opens the board, a client that leaves closes it, and a DUT that
+   re-enumerates ends the one child that held it, exactly as unplugging a cable
+   would."
+  [{:keys [socat]} hardware operation]
   [socat
-   (str "TCP-LISTEN:" byte-port ",bind=" loopback "," byte-listen-options)
-   (str "FILE:" dut-link ",raw,echo=0")])
+   (str "TCP-LISTEN:" (:byte-port hardware) ",bind=" (:loopback hardware) "," byte-listen-options)
+   (channel-address hardware operation)])
+
+(def usb-line-rate
+  "The nominal line rate the USB CDC byte channel opens at.
+
+   A USB CDC device carries no real bit rate, so the firmware ignores it, but the
+   Linux cdc-acm driver clears DTR whenever the requested rate is zero and the
+   firmware streams only while DTR is asserted. Opening the device at a nonzero
+   rate therefore raises DTR when a client connects and drops it when the client
+   leaves, so a byte client attaching and departing reads to the board exactly as
+   plugging and unplugging a USB cable would."
+  115200)
 
 (defn channel-address
-  "Return the socat address of the DUT byte channel that the holder opens.
+  "Return the socat address of the DUT byte channel that the byte service opens.
 
-   Both channels are raw byte streams behind a stable path, and only the UART
-   carries a bit rate. o-noctty opens the device without making it a controlling
-   terminal: the holder is a session leader, so without it the first byte the
-   board streams could raise a terminal signal and end the holder at once."
+   Both channels are raw byte streams behind a stable path, and each names a
+   nonzero line rate: the UART carries the operator's real bit rate, and the USB
+   carries the nominal one that holds DTR asserted for the life of the
+   connection, so opening and closing the channel raises and drops DTR exactly as
+   a cable going in and out would. o-noctty opens the device without making it a
+   controlling terminal: the byte service runs as a session leader, so without it
+   the first byte the board streams could raise a terminal signal and end it at
+   once."
   [{:keys [uart-device usb-device]} {:keys [channel baud]}]
   (case channel
     :uart (str "FILE:" uart-device ",raw,echo=0,o-noctty,b" baud)
-    :usb (str "FILE:" usb-device ",raw,echo=0,o-noctty")))
+    :usb (str "FILE:" usb-device ",raw,echo=0,o-noctty,b" usb-line-rate)))
 
 (defn channel-resource
   "Name the rig resource that carries one DUT byte channel."
