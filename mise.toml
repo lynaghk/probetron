@@ -1,3 +1,4 @@
 [tools]
 babashka = "1.13.219"
 clj-kondo = "2026.08.04"
+"github:weavejester/cljfmt" = "0.16.4"

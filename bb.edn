@@ -5,8 +5,10 @@
            :task (test-runner/run-tests!)}
   lint    {:doc "Lint the Probetron sources with clj-kondo"
            :task (shell "clj-kondo --lint src test")}
-  check   {:doc "Run lint and tests"
-           :depends [lint test]}
+  format  {:doc "Format the Probetron sources in place with cljfmt"
+           :task (shell "cljfmt fix src test")}
+  check   {:doc "Format, lint, and run tests"
+           :depends [format lint test]}
   package {:doc "Build the release archive under build/"
            :requires ([probetron.provisioning.package :as package])
            :task (System/exit (package/main! *command-line-args*))}

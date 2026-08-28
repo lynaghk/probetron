@@ -77,3 +77,7 @@ url_api = "https://api.github.com/repos/clj-kondo/clj-kondo/releases/assets/5014
 checksum = "sha256:58578e3393506556cd05921c6e6c0ab364f00a82f8b41acc13d54f724e3ed02d"
 url = "https://github.com/clj-kondo/clj-kondo/releases/download/v2026.08.04/clj-kondo-2026.08.04-windows-amd64.zip"
 url_api = "https://api.github.com/repos/clj-kondo/clj-kondo/releases/assets/501441153"
+
+[[tools."github:weavejester/cljfmt"]]
+version = "0.16.4"
+backend = "github:weavejester/cljfmt"
