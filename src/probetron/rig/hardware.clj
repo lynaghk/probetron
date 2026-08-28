@@ -66,17 +66,17 @@
 (def defaults
   "The fixed hardware of the appliance, which a test replaces value by value."
   {:probe-selector probe-selector
-   :spi-device spi-device
+   :spi-device     spi-device
    :swd-spi-device swd-spi-device
-   :gpio-chip gpio-chip
-   :run-gpio run-gpio
-   :uart-device uart-device
-   :usb-device usb-device
-   :loopback loopback
-   :byte-port byte-port
-   :dap-port dap-port
-   :reset-pulse reset-pulse
-   :max-elf-bytes max-elf-bytes})
+   :gpio-chip      gpio-chip
+   :run-gpio       run-gpio
+   :uart-device    uart-device
+   :usb-device     usb-device
+   :loopback       loopback
+   :byte-port      byte-port
+   :dap-port       dap-port
+   :reset-pulse    reset-pulse
+   :max-elf-bytes  max-elf-bytes})
 
 (defn version-command
   "Return the argv that asks probe-rs which release the image carries."
@@ -237,36 +237,36 @@
 
 (def resources
   "Every rig resource that a hardware operation opens, and where it comes from."
-  {:probe-rs {:in :executables
-              :name "probe-rs executable"
-              :repair "reinstall the rig image, which installs probe-rs"}
-   :gpioset {:in :executables
-             :name "gpioset executable"
-             :repair "reinstall the rig image, which installs the gpiod tools"}
-   :spi-device {:in :hardware
-                :name "SPI device"
-                :repair (str "enable SPI0 in the rig image and wire SWCLK, SWDIO, and ground"
-                             " to header pins 23, 21, 19, and 20")}
-   :swd-spi-device {:in :hardware
-                    :name "SWD SPI device"
+  {:probe-rs       {:in     :executables
+                    :name   "probe-rs executable"
+                    :repair "reinstall the rig image, which installs probe-rs"}
+   :gpioset        {:in     :executables
+                    :name   "gpioset executable"
+                    :repair "reinstall the rig image, which installs the gpiod tools"}
+   :spi-device     {:in     :hardware
+                    :name   "SPI device"
+                    :repair (str "enable SPI0 in the rig image and wire SWCLK, SWDIO, and ground"
+                                 " to header pins 23, 21, 19, and 20")}
+   :swd-spi-device {:in     :hardware
+                    :name   "SWD SPI device"
                     :repair (str "enable SPI0 in the rig image and reinstall the udev rule that"
                                  " names the SWD bus, then wire SWCLK, SWDIO, and ground to"
                                  " header pins 23, 21, 19, and 20")}
-   :gpio-chip {:in :hardware
-               :name "GPIO chip"
-               :repair "reboot the rig and wire GPIO26 on header pin 37 to the DUT RUN line"}
-   :socat {:in :executables
-           :name "socat executable"
-           :repair "reinstall the rig image, which installs socat"}
-   :uart-device {:in :hardware
-                 :name "UART device"
-                 :repair (str "enable UART0 in the rig image and wire the DUT RX and TX lines"
-                              " to header pins 8 and 10")}
-   :usb-device {:in :hardware
-                :name "DUT USB device"
-                :repair (str "plug the DUT into the Pi, and check that the firmware exposes a"
-                             " USB CDC device, because a board in BOOTSEL is mass storage"
-                             " and matches no rule")}})
+   :gpio-chip      {:in     :hardware
+                    :name   "GPIO chip"
+                    :repair "reboot the rig and wire GPIO26 on header pin 37 to the DUT RUN line"}
+   :socat          {:in     :executables
+                    :name   "socat executable"
+                    :repair "reinstall the rig image, which installs socat"}
+   :uart-device    {:in     :hardware
+                    :name   "UART device"
+                    :repair (str "enable UART0 in the rig image and wire the DUT RX and TX lines"
+                                 " to header pins 8 and 10")}
+   :usb-device     {:in     :hardware
+                    :name   "DUT USB device"
+                    :repair (str "plug the DUT into the Pi, and check that the firmware exposes a"
+                                 " USB CDC device, because a board in BOOTSEL is mass storage"
+                                 " and matches no rule")}})
 
 (defn resource-path
   "Return the absolute path that a runtime gives one rig resource."

@@ -23,14 +23,14 @@
        "probe: 0:0:/dev/spidev0.0 swd\n"))
 
 (def rig-edn
-  (pr-str {:probetron "0.1.0"
-           :babashka "1.13.219"
-           :probe-rs "probe-rs 0.32.0"
-           :os "Debian GNU/Linux 13 (trixie)"
-           :hostname "probetron-01"
+  (pr-str {:probetron  "0.1.0"
+           :babashka   "1.13.219"
+           :probe-rs   "probe-rs 0.32.0"
+           :os         "Debian GNU/Linux 13 (trixie)"
+           :hostname   "probetron-01"
            :machine-id "0123456789abcdef0123456789abcdef"
-           :probe {:selector "0:0:/dev/spidev0.0" :protocol "swd"}
-           :target "RP2350"}))
+           :probe      {:selector "0:0:/dev/spidev0.0" :protocol "swd"}
+           :target     "RP2350"}))
 
 (deftest a-short-operation-reaches-the-rig-through-one-quoted-remote-command
   (with-client! {}
@@ -67,10 +67,10 @@
 (deftest flash-streams-the-elf-to-the-rig-without-naming-a-client-path
   (with-client! {}
     (fn [client]
-      (let [elf (elf-file client)
+      (let [elf   (elf-file client)
             bytes (fs/read-all-bytes elf)]
         (run-client! client {:operation :flash :host "pi.lab" :chip "RP235x"
-                             :speed-khz 4000 :elf elf})
+                             :speed-khz 4000   :elf  elf})
         (is (= (seq bytes) (seq (recorded-stdin client))) "the rig reads the ELF on standard input")
         (is (= "sudo -n /usr/local/sbin/probetron-rig flash --chip RP235x --speed-khz 4000"
                (last (recorded-argv client))))
@@ -87,11 +87,11 @@
 
 (deftest a-failed-relayed-operation-names-the-rig-and-the-failing-status
   (with-client! {:exit op/exit-failure
-                 :err "Error: An error with the flashing procedure has occurred.\n"}
+                 :err  "Error: An error with the flashing procedure has occurred.\n"}
     (fn [client]
-      (let [elf (elf-file client)
-            {:keys [exit err calls]} (run-client! client {:operation :flash :host "pi.lab"
-                                                          :chip "RP235x" :speed-khz 4000 :elf elf})]
+      (let [elf                      (elf-file client)
+            {:keys [exit err calls]} (run-client! client {:operation :flash   :host      "pi.lab"
+                                                          :chip      "RP235x" :speed-khz 4000     :elf elf})]
         (is (= op/exit-failure exit))
         (is (str/includes? (:err (:result (first @calls))) "Error: An error with the flashing procedure")
             "the rig probe-rs diagnostic reaches the client untouched")
@@ -146,7 +146,7 @@
   (with-client! {:out rig-edn}
     (fn [client]
       (let [{:keys [exit out]} (run-client! client {:operation :info :host "pi.lab" :format :edn :speed-khz 20})
-            report (edn/read-string out)]
+            report             (edn/read-string out)]
         (is (= op/exit-ok exit))
         (is (= #{:client :rig} (set (keys report))))
         (is (= version/probetron-version (:probetron (:client report))))
@@ -171,7 +171,7 @@
   (with-client! {}
     (fn [client]
       (let [{:keys [exit calls]} (run-shell! client {:operation :shell
-                                                     :host op/usb-console-address})]
+                                                     :host      op/usb-console-address})]
         (is (= op/exit-ok exit))
         (is (= [(:ssh client) "-i" (key-path client op/usb-console-address) "-t"
                 "-o" "BatchMode=yes"
@@ -194,7 +194,7 @@
   (with-client! {:key-status 404}
     (fn [client]
       (let [{:keys [exit err]} (run-shell! client {:operation :shell
-                                                   :host op/usb-console-address})]
+                                                   :host      op/usb-console-address})]
         (is (= op/exit-failure exit))
         (is (str/includes? err "probetron:"))
         (is (nil? (recorded-argv client)) "no SSH invocation follows a failed key fetch")))))
@@ -202,17 +202,17 @@
 (defn with-client!
   "Give the body a temporary client home, a fake rig key, and a fake SSH executable."
   [{:keys [key-status] :as answers} body]
-  (let [home (str (fs/create-temp-dir {:prefix "probetron-client"}))
+  (let [home      (str (fs/create-temp-dir {:prefix "probetron-client"}))
         requested (atom [])]
     (try
-      (body {:home home
-             :ssh (fake-ssh! home answers)
+      (body {:home      home
+             :ssh       (fake-ssh! home answers)
              :requested requested
-             :fetch! (fn [url]
-                       (swap! requested conj url)
-                       (if key-status
-                         {:error (str "HTTP status " key-status)}
-                         {:body (.getBytes ^String rig-key)}))})
+             :fetch!    (fn [url]
+                          (swap! requested conj url)
+                          (if key-status
+                            {:error (str "HTTP status " key-status)}
+                            {:body (.getBytes ^String rig-key)}))})
       (finally (fs/delete-tree home)))))
 
 (def rig-key
@@ -236,19 +236,19 @@
 (defn run-client!
   "Run one client operation against the fake rig and return everything it wrote."
   [client operation]
-  (let [out (StringWriter.)
-        err (StringWriter.)
-        calls (atom [])
+  (let [out     (StringWriter.)
+        err     (StringWriter.)
+        calls   (atom [])
         runtime (session/runtime
-                 {:env {"XDG_CACHE_HOME" (:home client)}
-                  :fetch! (:fetch! client)
+                 {:env         {"XDG_CACHE_HOME" (:home client)}
+                  :fetch!      (:fetch! client)
                   :executables {:ssh (:ssh client)}
-                  :run! (fn [argv opts]
-                          (let [result @(process/process argv (merge {:throw false} opts
-                                                                     {:out :string :err :string}))]
-                            (swap! calls conj {:argv (vec argv) :opts opts :result result})
-                            result))})
-        exit (binding [*out* out *err* err] (session/execute! operation runtime))]
+                  :run!        (fn [argv opts]
+                                 (let [result @(process/process argv (merge {:throw false} opts
+                                                                            {:out :string :err :string}))]
+                                   (swap! calls conj {:argv (vec argv) :opts opts :result result})
+                                   result))})
+        exit    (binding [*out* out *err* err] (session/execute! operation runtime))]
     {:exit exit :out (str out) :err (str err) :calls calls}))
 
 (defn run-shell!
@@ -257,19 +257,19 @@
    The fake SSH executable reads standard input, so the recorded call keeps the
    streams the client asked for while the run itself takes none of the terminal."
   [client operation]
-  (let [out (StringWriter.)
-        err (StringWriter.)
-        calls (atom [])
+  (let [out     (StringWriter.)
+        err     (StringWriter.)
+        calls   (atom [])
         runtime (session/runtime
-                 {:env {"XDG_CACHE_HOME" (:home client)}
-                  :fetch! (:fetch! client)
+                 {:env         {"XDG_CACHE_HOME" (:home client)}
+                  :fetch!      (:fetch! client)
                   :executables {:ssh (:ssh client)}
-                  :run! (fn [argv opts]
-                          (let [result @(process/process argv (merge {:throw false} opts
-                                                                     {:in "" :out :string :err :string}))]
-                            (swap! calls conj {:argv (vec argv) :opts opts :result result})
-                            result))})
-        exit (binding [*out* out *err* err] (shell/open! operation runtime))]
+                  :run!        (fn [argv opts]
+                                 (let [result @(process/process argv (merge {:throw false} opts
+                                                                            {:in "" :out :string :err :string}))]
+                                   (swap! calls conj {:argv (vec argv) :opts opts :result result})
+                                   result))})
+        exit    (binding [*out* out *err* err] (shell/open! operation runtime))]
     {:exit exit :out (str out) :err (str err) :calls calls}))
 
 (defn recorded-argv

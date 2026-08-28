@@ -15,9 +15,9 @@
 (defn parse
   ([argv] (parse argv {}))
   ([argv ctx]
-   (cli/parse argv (merge {:env {}
+   (cli/parse argv (merge {:env       {}
                            :elf-facts (elf-facts {"firmware.elf" readable-elf
-                                                  "app.elf" readable-elf})}
+                                                  "app.elf"      readable-elf})}
                           ctx))))
 
 (defn operation
@@ -97,8 +97,8 @@
   (testing "the environment supplies chip and speed defaults"
     (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 2000 :elf "firmware.elf"}
            (operation ["flash" "firmware.elf"]
-                      {:env {"PROBETRON_HOST" "pi"
-                             "PROBETRON_CHIP" "RP2350"
+                      {:env {"PROBETRON_HOST"      "pi"
+                             "PROBETRON_CHIP"      "RP2350"
                              "PROBETRON_SPEED_KHZ" "2000"}}))))
   (testing "explicit options win over the environment"
     (is (= {:operation :flash :host "pi" :chip "RP2040" :speed-khz 500 :elf "firmware.elf"}
@@ -137,22 +137,22 @@
   (is (= {:operation :reset :host "pi"} (operation ["reset" "--host" "pi"]))))
 
 (deftest connect-channels
-  (is (= {:operation :connect
-          :host "pi"
-          :channel :usb
+  (is (= {:operation        :connect
+          :host             "pi"
+          :channel          :usb
           :usb-wait-seconds 10
-          :local-port nil
-          :rtt nil
-          :pty? false
-          :reset-on-exit? false}
+          :local-port       nil
+          :rtt              nil
+          :pty?             false
+          :reset-on-exit?   false}
          (operation ["connect" "--host" "pi" "--channel" "usb"])))
-  (is (= {:operation :connect
-          :host "pi"
-          :channel :uart
-          :baud 115200
-          :local-port nil
-          :rtt nil
-          :pty? false
+  (is (= {:operation      :connect
+          :host           "pi"
+          :channel        :uart
+          :baud           115200
+          :local-port     nil
+          :rtt            nil
+          :pty?           false
           :reset-on-exit? false}
          (operation ["connect" "--host" "pi" "--channel" "uart"])))
   (is (= 9600 (:baud (operation ["connect" "--host" "pi" "--channel" "uart" "--baud" "9600"]))))

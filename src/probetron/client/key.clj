@@ -27,8 +27,8 @@
    Every refusal is an explicit failure, even when an older cache copy exists,
    because a stale key hides a rig that no longer answers."
   [host {:keys [env fetch! filesystem]}]
-  (let [url (command/key-url host)
-        path (command/key-path env host)
+  (let [url    (command/key-url host)
+        path   (command/key-path env host)
         answer (when path (fetch! url))]
     (cond
       (nil? path)
@@ -76,9 +76,9 @@
   "Fetch one URL over plain HTTP and return {:body bytes} or {:error message}."
   [url]
   (try
-    (let [{:keys [status body]} (http/get url {:client @http-client
-                                               :as :bytes
-                                               :throw false
+    (let [{:keys [status body]} (http/get url {:client  @http-client
+                                               :as      :bytes
+                                               :throw   false
                                                :timeout request-timeout-ms})]
       (if (= 200 status)
         {:body body}

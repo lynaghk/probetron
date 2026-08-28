@@ -34,13 +34,13 @@
                [(op/unexpected-argument-error args)]
                (fn [values] {:operation :info
                              :speed-khz (:speed-khz values)
-                             :format (:format values)}))
+                             :format    (:format values)}))
 
     (:flash :erase)
     (op/finish (op/collect op/chip-and-speed-fields context)
                [(op/unexpected-argument-error args)]
                (fn [values] (cond-> {:operation command
-                                     :chip (:chip values)
+                                     :chip      (:chip values)
                                      :speed-khz (:speed-khz values)}
                               (= :flash command) (assoc :elf :stdin))))
 
@@ -55,20 +55,20 @@
                (fn [_] {:operation :log}))
 
     :connect
-    (let [[values errors] (op/collect [:channel] context)
-          channel (:channel values)
-          rtt? (true? (:rtt opts))
+    (let [[values errors]         (op/collect [:channel] context)
+          channel                 (:channel values)
+          rtt?                    (true? (:rtt opts))
           [rtt-values rtt-errors] (op/collect (op/connect-fields channel rtt?) context)]
       (op/finish [(merge values rtt-values) (into errors rtt-errors)]
                  (conj (op/connect-option-errors opts channel rtt? "--rtt")
                        (op/unexpected-argument-error args))
                  (fn [values]
-                   (cond-> {:operation :connect
-                            :channel (:channel values)
-                            :rtt (when rtt?
-                                   {:chip (:chip values)
-                                    :speed-khz (:speed-khz values)
-                                    :elf :stdin})
+                   (cond-> {:operation      :connect
+                            :channel        (:channel values)
+                            :rtt            (when rtt?
+                                              {:chip      (:chip values)
+                                               :speed-khz (:speed-khz values)
+                                               :elf       :stdin})
                             :reset-on-exit? (true? (:reset-on-exit opts))}
                      (= :uart (:channel values)) (assoc :baud (:baud values))
                      (= :usb (:channel values)) (assoc :usb-wait-seconds (:usb-wait-seconds values))))))
@@ -91,35 +91,35 @@
 
 (def command-specs
   "The options that each rig command accepts."
-  (let [value frontend/value-option
-        flag frontend/flag-option
+  (let [value          frontend/value-option
+        flag           frontend/flag-option
         chip-and-speed {:chip value :speed-khz value}]
-    {:info {:speed-khz value :format value}
-     :status {:format value}
-     :flash chip-and-speed
-     :erase chip-and-speed
-     :reset {}
-     :log {}
-     :connect (merge {:channel value
-                      :baud value
+    {:info    {:speed-khz value :format value}
+     :status  {:format value}
+     :flash   chip-and-speed
+     :erase   chip-and-speed
+     :reset   {}
+     :log     {}
+     :connect (merge {:channel          value
+                      :baud             value
                       :usb-wait-seconds value
-                      :rtt flag
-                      :reset-on-exit flag}
+                      :rtt              flag
+                      :reset-on-exit    flag}
                      chip-and-speed)
-     :debug {:reset-on-exit flag}}))
+     :debug   {:reset-on-exit flag}}))
 
 (def command-usage
   "The documented form of every rig command."
-  {:info "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
-   :status "  probetron-rig status  [--format <text|edn>]"
-   :log "  probetron-rig log"
-   :flash "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
-   :erase "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
-   :reset "  probetron-rig reset"
+  {:info    "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
+   :status  "  probetron-rig status  [--format <text|edn>]"
+   :log     "  probetron-rig log"
+   :flash   "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
+   :erase   "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
+   :reset   "  probetron-rig reset"
    :connect (str "  probetron-rig connect --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--rtt --chip <chip> [--speed-khz <speed>]]"
                  " [--reset-on-exit]")
-   :debug "  probetron-rig debug   [--reset-on-exit]"})
+   :debug   "  probetron-rig debug   [--reset-on-exit]"})
 
 (defn help-text
   "Return the help of the whole rig protocol."
@@ -137,10 +137,10 @@
 
    The rig reads no environment default, and every ELF file it flashes or
    decodes arrives on standard input rather than as a path."
-  {:program program-name
-   :help-text help-text
+  {:program       program-name
+   :help-text     help-text
    :command-specs command-specs
    :command-usage command-usage
-   :use-env? false
-   :refused refused-option
-   :build build})
+   :use-env?      false
+   :refused       refused-option
+   :build         build})

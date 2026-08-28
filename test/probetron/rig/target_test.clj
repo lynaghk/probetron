@@ -19,9 +19,9 @@
 (deftest information-identifies-the-rig-and-the-target
   (let [{:keys [exit out calls directory]}
         (with-rig! {:operation :info :format :text :speed-khz 20}
-                    {:responses (by-command
-                                 {:version {:exit 0 :out "probe-rs 0.32.0\n"}
-                                  :info {:exit 0 :out "Probe: linux SPI\nARM Chip with debug port\n"}})})]
+          {:responses (by-command
+                       {:version {:exit 0 :out "probe-rs 0.32.0\n"}
+                        :info    {:exit 0 :out "Probe: linux SPI\nARM Chip with debug port\n"}})})]
     (is (= op/exit-ok exit))
     (testing "info clocks the bus at the requested speed and asks probe-rs to name every component"
       (is (= [[(probe-rs directory) "--version"]
@@ -39,10 +39,10 @@
 
 (deftest information-in-edn-carries-stable-keys
   (let [{:keys [out]} (with-rig! {:operation :info :format :edn}
-                                  {:responses (by-command
-                                               {:version {:exit 0 :out "probe-rs 0.32.0"}
-                                                :info {:exit 0 :out "ARM Chip with debug port"}})})
-        report (edn/read-string out)]
+                        {:responses (by-command
+                                     {:version {:exit 0 :out "probe-rs 0.32.0"}
+                                      :info    {:exit 0 :out "ARM Chip with debug port"}})})
+        report        (edn/read-string out)]
     (is (= #{:probetron :babashka :probe-rs :os :hostname :machine-id :probe :target} (set (keys report))))
     (is (str/starts-with? (:probetron report) version/probetron-version)
         "the probetron field names the release and the build it came from")
@@ -55,13 +55,13 @@
 
 (deftest information-owns-the-target-while-it-reads-the-probe
   (let [directory (str (fs/create-temp-dir {:prefix "probetron-target"}))
-        owner (atom nil)]
+        owner     (atom nil)]
     (try
       (run-rig! directory {:operation :info :format :text}
-                 {:responses (fn [argv]
-                               (when (= "info" (second argv))
-                                 (reset! owner (slurp (fs/file (fs/path directory "active.edn")))))
-                               {:exit 0})})
+                {:responses (fn [argv]
+                              (when (= "info" (second argv))
+                                (reset! owner (slurp (fs/file (fs/path directory "active.edn")))))
+                              {:exit 0})})
       (is (str/includes? (str @owner) ":info") "info must hold the transaction lock")
       (is (not (fs/exists? (fs/path directory "active.edn"))) "and give the target back")
       (finally (fs/delete-tree directory)))))
@@ -69,22 +69,22 @@
 (deftest information-reports-a-probe-that-does-not-answer
   (let [{:keys [exit out]}
         (with-rig! {:operation :info :format :text}
-                    {:responses (by-command {:info {:exit 1 :err "Error: no debug probe found"}})})]
+          {:responses (by-command {:info {:exit 1 :err "Error: no debug probe found"}})})]
     (is (= op/exit-failure exit))
     (is (str/includes? out "no debug probe found"))))
 
 (deftest flash-verifies-the-download-and-then-pulses-the-reset-line
-  (let [image (elf)
-        uploaded (atom nil)
+  (let [image                 (elf)
+        uploaded              (atom nil)
         {:keys [exit calls directory uploads]}
         (with-rig! flash-operation
-                    {:stdin image
-                     :responses (fn [argv]
-                                  (when (= :download (command-name argv))
-                                    (reset! uploaded (fs/read-all-bytes (last (probe-argv argv)))))
-                                  {:exit 0})})
+          {:stdin     image
+           :responses (fn [argv]
+                        (when (= :download (command-name argv))
+                          (reset! uploaded (fs/read-all-bytes (last (probe-argv argv)))))
+                        {:exit 0})})
         [download-call reset] calls
-        download (probe-argv download-call)]
+        download              (probe-argv download-call)]
     (is (= op/exit-ok exit))
     (is (= 2 (count calls)) "flash downloads once and resets once")
     (is (= "script" (fs/file-name (first download-call)))
@@ -102,8 +102,8 @@
 (deftest a-failed-download-never-pulses-the-reset-line
   (let [{:keys [exit calls uploads]}
         (with-rig! flash-operation
-                    {:stdin (elf)
-                     :responses (by-command {:download {:exit 2 :err "Error: verification failed"}})})]
+          {:stdin     (elf)
+           :responses (by-command {:download {:exit 2 :err "Error: verification failed"}})})]
     (is (= 2 exit) "the rig gives back the status probe-rs returned")
     (is (= [:download] (mapv command-name calls)))
     (is (empty? uploads))))
@@ -134,12 +134,12 @@
 (deftest flash-refuses-an-upload-larger-than-the-limit
   (testing "an upload of exactly the maximum reaches probe-rs"
     (let [{:keys [exit calls]} (with-rig! flash-operation
-                                           {:stdin (elf) :hardware {:max-elf-bytes 128}})]
+                                 {:stdin (elf) :hardware {:max-elf-bytes 128}})]
       (is (= op/exit-ok exit))
       (is (= 2 (count calls)))))
   (testing "one byte more is refused before probe-rs runs"
     (let [{:keys [exit err calls uploads]} (with-rig! flash-operation
-                                                       {:stdin (elf) :hardware {:max-elf-bytes 127}})]
+                                             {:stdin (elf) :hardware {:max-elf-bytes 127}})]
       (is (= op/exit-failure exit))
       (is (str/includes? err "127-byte"))
       (is (empty? calls))
@@ -155,7 +155,7 @@
 (deftest erase-delegates-once-to-probe-rs
   (let [{:keys [exit calls directory]}
         (with-rig! {:operation :erase :chip "RP235x" :speed-khz 1000}
-                    {:responses (by-command {:erase {:exit 3 :err "Error: erase failed"}})})]
+          {:responses (by-command {:erase {:exit 3 :err "Error: erase failed"}})})]
     (is (= 3 exit) "the rig gives back the status probe-rs returned")
     (is (= "script" (fs/file-name (ffirst calls)))
         "erase runs probe-rs under a pseudo-terminal so its progress reaches the client")
@@ -194,23 +194,23 @@
 (defn run-rig!
   "Run one short rig operation and return its status, output, and recorded commands."
   [directory operation {:keys [remove] :as options}]
-  (let [calls (atom [])
-        out (StringWriter.)
-        err (StringWriter.)
+  (let [calls   (atom [])
+        out     (StringWriter.)
+        err     (StringWriter.)
         runtime (appliance! directory calls options)]
     (doseq [name remove] (fs/delete-if-exists (fs/path directory name)))
     (let [exit (binding [*out* out *err* err] (runner/execute! operation runtime))]
-      {:exit exit
-       :out (str out)
-       :err (str err)
-       :calls @calls
+      {:exit      exit
+       :out       (str out)
+       :err       (str err)
+       :calls     @calls
        :directory directory
-       :uploads (mapv str (fs/list-dir (fs/path directory "uploads")))})))
+       :uploads   (mapv str (fs/list-dir (fs/path directory "uploads")))})))
 
 (defn appliance!
   "Create a temporary appliance and return the runtime that owns it."
   [directory calls {:keys [stdin responses hardware]}]
-  (let [path (fn [name] (str (fs/path directory name)))
+  (let [path    (fn [name] (str (fs/path directory name)))
         respond (or responses (constantly {:exit 0}))]
     (doseq [name ["probe-rs" "gpioset" "spidev0.0" "gpiochip0"]]
       (fs/create-file (fs/path directory name)))
@@ -219,19 +219,19 @@
     (spit (path "hostname") "probetron-01\n")
     (spit (path "machine-id") "0123456789abcdef0123456789abcdef\n")
     (runner/runtime
-     {:paths {:lock (path "target.lock")
-              :active (path "active.edn")
-              :uploads (path "uploads")
-              :os-release (path "os-release")
-              :hostname (path "hostname")
-              :machine-id (path "machine-id")}
-      :executables {:probe-rs (path "probe-rs") :gpioset (path "gpioset")}
-      :hardware (merge {:spi-device (path "spidev0.0") :gpio-chip (path "gpiochip0")} hardware)
-      :stdin (fn [] (if (= :broken stdin)
-                      (PipedInputStream.)
-                      (ByteArrayInputStream. (or stdin (byte-array 0)))))
-      :run! (fn [argv _opts] (swap! calls conj (vec argv)) (respond argv))
-      :perform target/perform!
+     {:paths         {:lock       (path "target.lock")
+                      :active     (path "active.edn")
+                      :uploads    (path "uploads")
+                      :os-release (path "os-release")
+                      :hostname   (path "hostname")
+                      :machine-id (path "machine-id")}
+      :executables   {:probe-rs (path "probe-rs") :gpioset (path "gpioset")}
+      :hardware      (merge {:spi-device (path "spidev0.0") :gpio-chip (path "gpiochip0")} hardware)
+      :stdin         (fn [] (if (= :broken stdin)
+                              (PipedInputStream.)
+                              (ByteArrayInputStream. (or stdin (byte-array 0)))))
+      :run!          (fn [argv _opts] (swap! calls conj (vec argv)) (respond argv))
+      :perform       target/perform!
       :reset-target! target/pulse-reset!})))
 
 (defn by-command
@@ -242,7 +242,7 @@
 (defn command-name
   "Name the command that one argv runs, seeing through a pseudo-terminal wrapper."
   [argv]
-  (let [argv (probe-argv argv)
+  (let [argv       (probe-argv argv)
         executable (fs/file-name (first argv))]
     (if (= "probe-rs" executable)
       (keyword (str/replace (second argv) #"^--" ""))
@@ -275,15 +275,15 @@
   [& {:as overrides}]
   (let [{:keys [magic class data ident-version version machine ehsize phentsize shentsize
                 phoff phnum shoff shnum segments size]}
-        (merge {:magic [0x7f 0x45 0x4c 0x46]
-                :class 1 :data 1 :ident-version 1 :version 1 :machine 0x28
-                :ehsize 52 :phentsize 32 :shentsize 40
-                :phoff 52 :shoff 0 :shnum 0
+        (merge {:magic    [0x7f 0x45 0x4c 0x46]
+                :class    1                                 :data      1  :ident-version 1  :version 1 :machine 0x28
+                :ehsize   52                                :phentsize 32 :shentsize     40
+                :phoff    52                                :shoff     0  :shnum         0
                 :segments [{:type 1 :offset 116 :filesz 8}]
-                :size 128}
+                :size     128}
                overrides)
-        entries (or phnum (count segments))
-        bytes (byte-array size)]
+        entries                                                                           (or phnum (count segments))
+        bytes                                                                             (byte-array size)]
     (doseq [[index value] (map-indexed vector magic)] (put8! bytes index value))
     (put8! bytes 4 class)
     (put8! bytes 5 data)

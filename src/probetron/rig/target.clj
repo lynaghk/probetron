@@ -35,18 +35,18 @@
   [{:keys [format speed-khz]} {:keys [executables hardware paths filesystem run!] :as runtime}]
   (or (missing-status runtime [:probe-rs :spi-device])
       (let [read-file (:read-file filesystem)
-            release (capture! run! (hardware/version-command executables))
-            probe (capture! run! (hardware/info-command executables hardware {:speed-khz speed-khz}))]
+            release   (capture! run! (hardware/version-command executables))
+            probe     (capture! run! (hardware/info-command executables hardware {:speed-khz speed-khz}))]
         (println (information/render
-                  (information/report {:probetron (version/stamp-line (version/describe))
-                                       :babashka (System/getProperty "babashka.version")
-                                       :probe-rs (:output release)
-                                       :os (read-file (:os-release paths))
-                                       :hostname (read-file (:hostname paths))
-                                       :machine-id (read-file (:machine-id paths))
+                  (information/report {:probetron      (version/stamp-line (version/describe))
+                                       :babashka       (System/getProperty "babashka.version")
+                                       :probe-rs       (:output release)
+                                       :os             (read-file (:os-release paths))
+                                       :hostname       (read-file (:hostname paths))
+                                       :machine-id     (read-file (:machine-id paths))
                                        :probe-selector (:probe-selector hardware)
-                                       :protocol hardware/swd-protocol
-                                       :target (:output probe)})
+                                       :protocol       hardware/swd-protocol
+                                       :target         (:output probe)})
                   format))
         (if (zero? (:exit probe)) op/exit-ok op/exit-failure))))
 
@@ -104,7 +104,7 @@
    and it returns the reason it refuses an upload, or nil."
   [{:keys [hardware stdin]} path]
   (let [limit (:max-elf-bytes hardware)
-        size (copy-bounded! (stdin) path (inc limit))]
+        size  (copy-bounded! (stdin) path (inc limit))]
     (if (> size limit) (oversize-message limit) (elf-refusal path))))
 
 (defn receive-session-elf!
@@ -117,8 +117,8 @@
    so the rig reads exactly the ELF and leaves the rest of standard input to the
    tether. A truncated or oversized frame is refused before any hardware opens."
   [{:keys [hardware stdin]} path]
-  (let [limit (:max-elf-bytes hardware)
-        in (stdin)
+  (let [limit  (:max-elf-bytes hardware)
+        in     (stdin)
         length (read-uint32! in)]
     (cond
       (nil? length) "the RTT upload ended before it declared its length"
@@ -153,7 +153,7 @@
    disconnects in the middle of an upload leaves nothing behind either."
   [path body]
   (let [remove! (fn [] (fs/delete-if-exists path))
-        hook (Thread. ^Runnable remove!)]
+        hook    (Thread. ^Runnable remove!)]
     (.addShutdownHook (Runtime/getRuntime) hook)
     (try
       (body path)

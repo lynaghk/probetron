@@ -64,9 +64,9 @@
    rig."
   [operation key-path runtime streams]
   (let [{:keys [executables run!]} runtime
-        argv (command/ssh-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
-                               (command/remote-command operation))
-        result (run! argv (merge {:in (upload operation)} streams))]
+        argv                       (command/ssh-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
+                                                     (command/remote-command operation))
+        result                     (run! argv (merge {:in (upload operation)} streams))]
     (report-transport-failure! (:host operation) (:exit result))
     result))
 
@@ -88,8 +88,8 @@
    and EDN keeps stable keys on both sides."
   [operation key-path runtime]
   (let [client {:probetron version/probetron-version
-                :babashka (System/getProperty "babashka.version")
-                :key key-path}]
+                :babashka  (System/getProperty "babashka.version")
+                :key       key-path}]
     (if (= :edn (:format operation))
       (report-edn! operation client key-path runtime)
       (report-text! operation client key-path runtime))))
@@ -104,7 +104,7 @@
   (flush)
   (announce-waiting! operation)
   (let [{:keys [exit out]} (invoke! operation key-path runtime {:out :string :err :inherit})
-        rig (rig-information out :text)]
+        rig                (rig-information out :text)]
     (if rig
       (do (println rig) exit)
       (report-unreadable! operation out exit))))
@@ -117,7 +117,7 @@
   [operation client key-path runtime]
   (announce-waiting! operation)
   (let [{:keys [exit out]} (invoke! operation key-path runtime {:out :string :err :inherit})
-        rig (rig-information out :edn)]
+        rig                (rig-information out :edn)]
     (if rig
       (do (println (report/render-edn (report/information (assoc client :rig rig))))
           exit)
@@ -178,23 +178,23 @@
 
 (def default-filesystem
   "The real filesystem behind the key cache."
-  {:exists? fs/exists?
-   :read-bytes fs/read-all-bytes
-   :permissions (fn [path] (fs/posix->str (fs/posix-file-permissions path)))
+  {:exists?         fs/exists?
+   :read-bytes      fs/read-all-bytes
+   :permissions     (fn [path] (fs/posix->str (fs/posix-file-permissions path)))
    :make-directory! (fn [path] (fs/create-dirs path {:posix-file-permissions "rwx------"}))
-   :write-key! #'write-key!})
+   :write-key!      #'write-key!})
 
 (def default-runtime
   "The production wiring of the key endpoint, the filesystem, and subprocesses."
-  {:executables default-executables
-   :filesystem default-filesystem
-   :fetch! rig-key/http-fetch!
-   :which (fn [program] (some-> (fs/which program) str))
-   :reserve-port! #'reserve-port!
-   :make-link-directory! #'make-link-directory!
+  {:executables            default-executables
+   :filesystem             default-filesystem
+   :fetch!                 rig-key/http-fetch!
+   :which                  (fn [program] (some-> (fs/which program) str))
+   :reserve-port!          #'reserve-port!
+   :make-link-directory!   #'make-link-directory!
    :delete-link-directory! fs/delete-tree
-   :run! (fn [argv opts] @(process/process argv (merge {:throw false} opts)))
-   :spawn! process/process})
+   :run!                   (fn [argv opts] @(process/process argv (merge {:throw false} opts)))
+   :spawn!                 process/process})
 
 (defn reserve-port!
   "Return a free ephemeral port on the client loopback.

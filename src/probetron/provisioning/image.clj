@@ -84,8 +84,8 @@
 (defn main!
   "Build the rig image from a command line and return an exit status."
   [argv]
-  (let [argv (vec argv)
-        parsed (op/parse-options argv {:validate-only {:coerce :boolean}})
+  (let [argv                             (vec argv)
+        parsed                           (op/parse-options argv {:validate-only {:coerce :boolean}})
         {:keys [option-error opts args]} parsed]
     (cond
       (some #{"--help" "-h"} argv) (do (println (usage)) op/exit-ok)
@@ -107,9 +107,9 @@
       (do
         (report-topology! manifest)
         (require-privilege!)
-        (let [work (prepare-work!)
+        (let [work   (prepare-work!)
               staged (stage! manifest)
-              raw (generate-image! manifest checkout staged work overrides)]
+              raw    (generate-image! manifest checkout staged work overrides)]
           (println (report (publish! manifest raw)))
           op/exit-ok)))))
 
@@ -156,8 +156,8 @@
    probe-rs here into an aarch64 binary, so no other host can produce this image."
   [manifest]
   (let [{:keys [id version-id machine]} (:host manifest)
-        release (os-release)
-        found (str/trim (capture! {} ["uname" "-m"] "cannot read the machine type"))]
+        release                         (os-release)
+        found                           (str/trim (capture! {} ["uname" "-m"] "cannot read the machine type"))]
     (when-not (and (= id (get release "ID")) (= version-id (get release "VERSION_ID")))
       (fail! (str "the image builds on Debian " version-id " " machine " alone, and this host is "
                   (get release "PRETTY_NAME" "unknown") ": run the build on a Debian "
@@ -186,8 +186,8 @@
    needs no network at all."
   [manifest]
   (let [{:keys [url revision tag]} (:rpi-image-gen manifest)
-        directory (fs/path project-root (get-in manifest [:rpi-image-gen :checkout]))
-        git (fn [message & argv] (capture! {} (into ["git" "-C" (str directory)] argv) message))]
+        directory                  (fs/path project-root (get-in manifest [:rpi-image-gen :checkout]))
+        git                        (fn [message & argv] (capture! {} (into ["git" "-C" (str directory)] argv) message))]
     (when-not (fs/directory? (fs/path directory ".git"))
       (fs/create-dirs (fs/parent directory))
       (fs/delete-tree directory)
@@ -206,17 +206,17 @@
    Nothing here writes to the project, opens the network, or needs privilege,
    so it is both the --validate-only check and the first step of a real build."
   [manifest checkout]
-  (let [ig (ig-program checkout)
-        work (fs/create-temp-dir {:prefix "probetron-image-validate"})
-        dynamic (fs/path work "dynamic")
-        environment {"PATH" (str/join ":" [(str (fs/path checkout "bin"))
-                                           (str (fs/path checkout "bin" "generators"))
-                                           (System/getenv "PATH")])
-                     "DYNROOT" (str dynamic)
+  (let [ig          (ig-program checkout)
+        work        (fs/create-temp-dir {:prefix "probetron-image-validate"})
+        dynamic     (fs/path work "dynamic")
+        environment {"PATH"              (str/join ":" [(str (fs/path checkout "bin"))
+                                                        (str (fs/path checkout "bin" "generators"))
+                                                        (System/getenv "PATH")])
+                     "DYNROOT"           (str dynamic)
                      "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}
-        registry (fs/path work "registry.env")
-        user (fs/path work "user.env")
-        settings (fs/path work "config.env")]
+        registry    (fs/path work "registry.env")
+        user        (fs/path work "user.env")
+        settings    (fs/path work "config.env")]
     (try
       (fs/create-dirs (fs/path dynamic "layer"))
       (doseq [file (layer-files)]
@@ -264,8 +264,8 @@
    of the layer section, so an added layer needs no change here."
   [settings]
   (into ["essential"]
-        (for [line (str/split-lines settings)
-              :let [[_ key value] (re-matches #"(IGconf_device_layer|IGconf_image_layer|IGconf_layer_[A-Za-z0-9_]+)=\"(.*)\"" line)]
+        (for [line  (str/split-lines settings)
+              :let  [[_ key value] (re-matches #"(IGconf_device_layer|IGconf_image_layer|IGconf_layer_[A-Za-z0-9_]+)=\"(.*)\"" line)]
               :when (and key (not (str/blank? value)))]
           value)))
 
@@ -274,17 +274,17 @@
   [checkout dynamic]
   (let [architecture (fn [query] (str/trim (capture! {} ["dpkg-architecture" query]
                                                      "cannot read the Debian architecture: install dpkg-dev")))]
-    (->> {"DEB_BUILD_ARCH" (architecture "-qDEB_BUILD_ARCH")
-          "DEB_BUILD_GNU_TYPE" (architecture "-qDEB_BUILD_GNU_TYPE")
-          "DEB_HOST_ARCH" (architecture "-qDEB_BUILD_ARCH")
-          "DEB_HOST_GNU_TYPE" (architecture "-qDEB_BUILD_GNU_TYPE")
-          "TOOLCHAIN_MODE" "native"
-          "IGTOP" (str checkout)
-          "IGROOT" (str checkout)
-          "LAYER_HOOKS" (str (fs/path checkout "layer-hooks"))
-          "RPI_TEMPLATES" (str (fs/path checkout "templates" "rpi"))
-          "DYNROOT" (str dynamic)
-          "SRCROOT" (str (fs/path project-root source-root))
+    (->> {"DEB_BUILD_ARCH"          (architecture "-qDEB_BUILD_ARCH")
+          "DEB_BUILD_GNU_TYPE"      (architecture "-qDEB_BUILD_GNU_TYPE")
+          "DEB_HOST_ARCH"           (architecture "-qDEB_BUILD_ARCH")
+          "DEB_HOST_GNU_TYPE"       (architecture "-qDEB_BUILD_GNU_TYPE")
+          "TOOLCHAIN_MODE"          "native"
+          "IGTOP"                   (str checkout)
+          "IGROOT"                  (str checkout)
+          "LAYER_HOOKS"             (str (fs/path checkout "layer-hooks"))
+          "RPI_TEMPLATES"           (str (fs/path checkout "templates" "rpi"))
+          "DYNROOT"                 (str dynamic)
+          "SRCROOT"                 (str (fs/path project-root source-root))
           "IGconf_artefact_version" version/probetron-version}
          (map (fn [[key value]] (str key "=\"" value "\"\n")))
          (str/join))))
@@ -327,7 +327,7 @@
    works in the system temporary directory rather than in the checkout."
   []
   (let [temporary (temporary-directory)
-        free (.getUsableSpace (fs/file temporary))]
+        free      (.getUsableSpace (fs/file temporary))]
     (when (= :short (space-state free))
       (fail! (str "the image build needs " (gibibytes required-space) " of free space in " temporary
                   ", which holds " (gibibytes free)
@@ -366,10 +366,10 @@
    Every artefact arrives on the build host and nothing is ever fetched from the
    target image, at first boot or later."
   [manifest]
-  (let [stage (fs/path project-root cache-directory "stage")
+  (let [stage          (fs/path project-root cache-directory "stage")
         keys-directory (fs/path stage "keys")
-        rig-key (fs/path keys-directory "probetron_key")
-        release (package/package! {:root project-root})]
+        rig-key        (fs/path keys-directory "probetron_key")
+        release        (package/package! {:root project-root})]
     (when-let [message (:error release)]
       (fail! (str "cannot build the release archive: " message)))
     (fs/create-dirs stage)
@@ -378,10 +378,10 @@
     (capture! {} ["ssh-keygen" "-q" "-t" "ed25519" "-N" "" "-C"
                   (str "probetron-" version/probetron-version) "-f" (str rig-key)]
               "cannot generate the image SSH keypair: install openssh-client")
-    {:release (str (:archive release))
-     :babashka (str (extract! manifest :babashka))
-     :probe-rs (str (build-probe-rs!))
-     :rig-key (str rig-key)
+    {:release        (str (:archive release))
+     :babashka       (str (extract! manifest :babashka))
+     :probe-rs       (str (build-probe-rs!))
+     :rig-key        (str rig-key)
      :authorized-key (str rig-key ".pub")}))
 
 (defn extract!
@@ -391,9 +391,9 @@
    request, and a digest that does not match stops the build before use."
   [manifest key]
   (let [{:keys [url sha256 member]} (get manifest key)
-        downloads (fs/path project-root cache-directory "downloads")
-        archive (fs/path downloads (fs/file-name url))
-        unpacked (fs/path project-root cache-directory "stage" (fs/file-name member))]
+        downloads                   (fs/path project-root cache-directory "downloads")
+        archive                     (fs/path downloads (fs/file-name url))
+        unpacked                    (fs/path project-root cache-directory "stage" (fs/file-name member))]
     (fs/create-dirs downloads)
     (when-not (and (fs/regular-file? archive) (= sha256 (sha-256-file archive)))
       (download! url archive))
@@ -452,7 +452,7 @@
 (defn generate-image!
   "Run the pinned image generator and return the raw image that it wrote."
   [manifest checkout staged work extra]
-  (let [name (get-in manifest [:device :image-name])
+  (let [name  (get-in manifest [:device :image-name])
         image (fs/path work (str "image-" name) (str name ".img"))]
     (fs/create-dirs work)
     (fs/delete-if-exists image)
@@ -491,11 +491,11 @@
    Both outputs arrive through a temporary neighbour and one rename each, so an
    interrupted build replaces neither a valid image nor a valid checksum."
   [manifest image]
-  (let [name (str (get-in manifest [:device :image-name]) ".img.xz")
-        directory (fs/path project-root build-directory)
+  (let [name       (str (get-in manifest [:device :image-name]) ".img.xz")
+        directory  (fs/path project-root build-directory)
         compressed (fs/path directory name)
-        checksum (fs/path directory (str name ".sha256"))
-        partial (fs/path directory (str name ".part"))]
+        checksum   (fs/path directory (str name ".sha256"))
+        partial    (fs/path directory (str name ".part"))]
     (fs/create-dirs directory)
     (stream! {:out (fs/file partial)}
              ["xz" "--compress" "--threads=0" "-6" "--stdout" (str image)]
@@ -590,8 +590,8 @@
   "Return one shell-style key and value file as a map, or an empty map."
   [path]
   (if (fs/regular-file? path)
-    (into {} (for [line (str/split-lines (slurp path))
-                   :let [[_ key value] (re-matches #"([A-Za-z_][A-Za-z0-9_]*)=\"?([^\"]*)\"?" line)]
+    (into {} (for [line  (str/split-lines (slurp path))
+                   :let  [[_ key value] (re-matches #"([A-Za-z_][A-Za-z0-9_]*)=\"?([^\"]*)\"?" line)]
                    :when key]
                [key value]))
     {}))

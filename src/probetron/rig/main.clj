@@ -28,7 +28,7 @@
                  exit)
     :error (do (binding [*out* *err*] (println (str lifecycle/program-name ": " message)))
                exit)
-    :run (runner/execute! operation (runner/runtime {:perform perform!
+    :run (runner/execute! operation (runner/runtime {:perform       perform!
                                                      :reset-target! reset-target!}))))
 
 (defn perform!

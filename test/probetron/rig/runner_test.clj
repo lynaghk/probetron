@@ -18,13 +18,13 @@
 
 (deftest a-short-operation-owns-the-target-and-gives-it-back
   (let [directory (temporary-directory)
-        seen (atom nil)]
+        seen      (atom nil)]
     (try
       (let [exit (runner/execute! {:operation :reset}
                                   (rig-runtime directory
-                                                {:perform (fn [_operation _session]
-                                                            (reset! seen (owner-record directory))
-                                                            op/exit-ok)}))]
+                                               {:perform (fn [_operation _session]
+                                                           (reset! seen (owner-record directory))
+                                                           op/exit-ok)}))]
         (is (= op/exit-ok exit))
         (testing "metadata appears only while the operation owns the lock"
           (is (= :reset (:command @seen)))
@@ -36,11 +36,11 @@
 
 (deftest a-second-operation-fails-immediately-with-the-busy-status
   (let [directory (temporary-directory)
-        rig (start-rig! directory)]
+        rig       (start-rig! directory)]
     (try
-      (let [errors (StringWriter.)
+      (let [errors  (StringWriter.)
             started (System/nanoTime)
-            exit (binding [*err* errors] (runner/execute! {:operation :reset} (rig-runtime directory {})))]
+            exit    (binding [*err* errors] (runner/execute! {:operation :reset} (rig-runtime directory {})))]
         (is (= op/exit-busy exit))
         (is (< (elapsed-ms started) 3000) "a conflict must not wait for the lock")
         (testing "the busy answer names the operation that owns the target"
@@ -51,7 +51,7 @@
 
 (deftest active-metadata-names-the-owner
   (let [directory (temporary-directory)
-        rig (start-rig! directory)]
+        rig       (start-rig! directory)]
     (try
       (let [owner (owner-record directory)]
         (is (= :connect (:command owner)))
@@ -66,9 +66,9 @@
       (finally (stop-rig! rig directory) (fs/delete-tree directory)))))
 
 (deftest a-handled-termination-reaps-owned-children-and-releases-the-lock
-  (let [directory (temporary-directory)
-        rig (start-rig! directory)
-        helper (recorded-pid directory "helper.pid")
+  (let [directory  (temporary-directory)
+        rig        (start-rig! directory)
+        helper     (recorded-pid directory "helper.pid")
         grandchild (recorded-pid directory "grandchild.pid")]
     (try
       (is (alive? helper))
@@ -85,7 +85,7 @@
 
 (deftest reset-on-exit-runs-after-child-cleanup
   (let [directory (temporary-directory)
-        rig (start-rig! directory "--reset-on-exit")]
+        rig       (start-rig! directory "--reset-on-exit")]
     (try
       (terminate! rig)
       (await-exit! rig)
@@ -100,14 +100,14 @@
   ;; so closing that input — as a departing client does, however it departs —
   ;; ends the session and frees the lock with no signal.
   (let [directory (temporary-directory)
-        out (java.io.PipedOutputStream.)
-        in (java.io.PipedInputStream. out)]
+        out       (java.io.PipedOutputStream.)
+        in        (java.io.PipedInputStream. out)]
     (try
       (let [session (future
                       (runner/execute!
                        {:operation :connect}
                        (rig-runtime directory
-                                    {:stdin (fn [] in)
+                                    {:stdin   (fn [] in)
                                      :perform (fn [_operation session]
                                                 ((:watch-client! session))
                                                 (let [helper ((:start-helper! session)
@@ -140,9 +140,9 @@
       (finally (fs/delete-tree directory)))))
 
 (deftest a-missing-runtime-directory-names-itself
-  (let [root (temporary-directory)
+  (let [root      (temporary-directory)
         directory (str (fs/path root "absent"))
-        errors (StringWriter.)]
+        errors    (StringWriter.)]
     (try
       (let [exit (binding [*err* errors]
                    (runner/execute! {:operation :reset} (rig-runtime directory {})))]
@@ -158,14 +158,14 @@
 (defn paths
   "Return the ownership paths inside a temporary directory."
   [directory]
-  {:lock (str (fs/path directory "target.lock"))
-   :active (str (fs/path directory "active.edn"))
+  {:lock    (str (fs/path directory "target.lock"))
+   :active  (str (fs/path directory "active.edn"))
    :dut-log (str (fs/path directory "dut.log"))})
 
 (defn rig-runtime
   "Return a runtime that owns a temporary target instead of the appliance one."
   [directory overrides]
-  (runner/runtime (merge {:paths (paths directory)
+  (runner/runtime (merge {:paths   (paths directory)
                           :perform (fn [_operation _session]
                                      (is false "a refused operation must never run")
                                      op/exit-failure)}
@@ -175,7 +175,7 @@
   "Start the fixture rig and wait until it owns the target."
   [directory & flags]
   (let [rig (process/process (into ["bb" "-m" "probetron.rig.fixture" (str directory)] flags)
-                              {:out :stream :err :inherit})]
+                             {:out :stream :err :inherit})]
     (is (= "holding" (.readLine (io/reader (:out rig))))
         "the fixture rig must announce that it owns the target")
     rig))
@@ -212,7 +212,7 @@
     (try
       (spit (fs/file (:dut-log (paths directory)))
             "{:at #inst \"2026-08-28T10:00:00Z\" :event :session-start :operation :flash}\n")
-      (let [out (StringWriter.)
+      (let [out  (StringWriter.)
             exit (binding [*out* out] (runner/execute! {:operation :log} (rig-runtime directory {})))]
         (is (= op/exit-ok exit))
         (is (str/includes? (str out) ":event :session-start"))
@@ -223,7 +223,7 @@
 (deftest the-log-operation-says-when-the-record-is-empty
   (let [directory (temporary-directory)]
     (try
-      (let [out (StringWriter.)
+      (let [out  (StringWriter.)
             exit (binding [*out* out] (runner/execute! {:operation :log} (rig-runtime directory {})))]
         (is (= op/exit-ok exit))
         (is (str/includes? (str out) "no DUT events")))

@@ -60,7 +60,7 @@
   (let [directory (temporary-directory)
         appearing (fs/path directory "probetron-dut")]
     (try
-      (let [calls (atom [])
+      (let [calls   (atom [])
             runtime (fixture/appliance! directory calls {})]
         (fs/delete-if-exists appearing)
         (future (Thread/sleep 300) (fs/create-file appearing))
@@ -74,7 +74,7 @@
       (finally (fixture/stop-all! directory) (fs/delete-tree directory)))))
 
 (deftest the-usb-channel-gives-up-after-the-requested-interval
-  (let [started (System/nanoTime)
+  (let [started                  (System/nanoTime)
         {:keys [exit err calls]} (run-session! (assoc usb-operation :usb-wait-seconds 1)
                                                {:remove ["probetron-dut"]})]
     (is (= op/exit-unavailable exit))
@@ -94,9 +94,9 @@
 
 (deftest the-rig-records-every-session-it-owns-to-the-dut-log
   (let [directory (temporary-directory)
-        calls (atom [])
-        runtime (fixture/appliance! directory calls {})
-        session (future (runner/execute! usb-operation runtime))]
+        calls     (atom [])
+        runtime   (fixture/appliance! directory calls {})
+        session   (future (runner/execute! usb-operation runtime))]
     (try
       (is (some? (fixture/await-pid! directory "bridge")) "the session must run")
       (fixture/release! directory)
@@ -117,10 +117,10 @@
 
 (deftest a-dut-that-re-enumerates-mid-session-is-recorded-and-reported
   (let [directory (temporary-directory)
-        device (fs/path directory "probetron-dut")
-        calls (atom [])
-        runtime (fixture/appliance! directory calls {})
-        session (future (runner/execute! usb-operation runtime))]
+        device    (fs/path directory "probetron-dut")
+        calls     (atom [])
+        runtime   (fixture/appliance! directory calls {})
+        session   (future (runner/execute! usb-operation runtime))]
     (try
       (is (some? (fixture/await-pid! directory "bridge")) "the session must run")
       ;; The DUT drops and returns while a byte client is attached, exactly as a
@@ -167,7 +167,7 @@
 (deftest rtt-decodes-beside-the-byte-listener
   (with-running-session! (assoc uart-operation :rtt rtt) {:stdin (target-test/elf)}
     (fn [{:keys [calls directory]}]
-      (let [bridge (helper-call @calls "bridge")
+      (let [bridge  (helper-call @calls "bridge")
             decoder (helper-call @calls "rtt")]
         (is (= 2 (count @calls)) "the bridge and the decoder are the two owned children")
         (is (stand-in/alive? (fixture/await-pid! directory "bridge")))
@@ -188,7 +188,7 @@
 (deftest an-rtt-decoder-that-stops-leaves-the-bridge-usable
   (with-running-session! (assoc uart-operation :rtt rtt) {:stdin (target-test/elf)}
     (fn [{:keys [directory session]}]
-      (let [bridge (fixture/await-pid! directory "bridge")
+      (let [bridge  (fixture/await-pid! directory "bridge")
             decoder (fixture/await-pid! directory "rtt")]
         (stand-in/signal! "-KILL" decoder)
         (Thread/sleep 500)
@@ -225,7 +225,7 @@
   (let [directory (temporary-directory)]
     (try
       (fs/write-bytes (fs/file (fs/path directory "rtt.elf")) (target-test/elf))
-      (let [rig (start-fixture! directory "connect")
+      (let [rig  (start-fixture! directory "connect")
             pids (into {} (map (fn [name] [name (fixture/await-pid! directory name)]))
                        (:connect fixture/helper-names))]
         (is (every? some? (vals pids)) "every owned child runs before the signal arrives")
@@ -251,23 +251,23 @@
    operation ended."
   [operation options body]
   (let [directory (temporary-directory)
-        helper (get options :helper "bridge")
-        calls (atom [])
-        out (StringWriter.)
-        err (StringWriter.)
-        runtime (fixture/appliance! directory calls options)
-        session (binding [*out* out *err* err] (future (runner/execute! operation runtime)))]
+        helper    (get options :helper "bridge")
+        calls     (atom [])
+        out       (StringWriter.)
+        err       (StringWriter.)
+        runtime   (fixture/appliance! directory calls options)
+        session   (binding [*out* out *err* err] (future (runner/execute! operation runtime)))]
     (try
       (is (some? (fixture/await-pid! directory helper))
           (str "the session must start its " helper))
       (body {:directory directory :calls calls :session session})
       (fixture/release! directory)
-      {:status (deref session 15000 :timeout)
-       :out (str out)
-       :err (str err)
-       :calls @calls
-       :uploads (mapv str (fs/list-dir (fs/path directory "uploads")))
-       :reset? (fs/exists? (fs/path directory "reset.log"))
+      {:status    (deref session 15000 :timeout)
+       :out       (str out)
+       :err       (str err)
+       :calls     @calls
+       :uploads   (mapv str (fs/list-dir (fs/path directory "uploads")))
+       :reset?    (fs/exists? (fs/path directory "reset.log"))
        :reset-log (reset-log directory)}
       (finally
         (fixture/release! directory)
@@ -283,19 +283,19 @@
   [operation {:keys [remove] :as options}]
   (let [directory (temporary-directory)]
     (try
-      (let [calls (atom [])
-            out (StringWriter.)
-            err (StringWriter.)
+      (let [calls   (atom [])
+            out     (StringWriter.)
+            err     (StringWriter.)
             runtime (fixture/appliance! directory calls options)]
         (doseq [name remove] (fs/delete-if-exists (fs/path directory name)))
         (let [session (binding [*out* out *err* err] (future (runner/execute! operation runtime)))
-              exit (deref session 20000 :running)]
+              exit    (deref session 20000 :running)]
           (is (not= :running exit) "the session must end on its own")
           (fixture/release! directory)
-          {:exit exit
-           :out (str out)
-           :err (str err)
-           :calls @calls
+          {:exit    exit
+           :out     (str out)
+           :err     (str err)
+           :calls   @calls
            :uploads (mapv str (fs/list-dir (fs/path directory "uploads")))}))
       (finally
         (fixture/release! directory)

@@ -11,13 +11,13 @@
 (declare with-session! run-session! session-record endpoint-port pty-link ssh-options)
 
 (def uart-connect
-  {:operation :connect
-   :host fixture/host
-   :channel :uart
-   :baud 115200
-   :local-port nil
-   :rtt nil
-   :pty? false
+  {:operation      :connect
+   :host           fixture/host
+   :channel        :uart
+   :baud           115200
+   :local-port     nil
+   :rtt            nil
+   :pty?           false
    :reset-on-exit? false})
 
 (deftest the-session-forwards-the-rig-byte-service-to-one-client-loopback-port
@@ -48,12 +48,12 @@
 
 (deftest an-rtt-elf-travels-to-the-rig-on-standard-input
   (let [client (fixture/client! {})
-        elf (fixture/elf client)]
+        elf    (fixture/elf client)]
     (with-session! (assoc uart-connect :rtt {:elf elf :chip "RP235x" :speed-khz 2000})
       {:client client}
       (fn [{:keys [calls]}]
         (let [elf-bytes (vec (fs/read-all-bytes elf))
-              captured (vec (fixture/recorded-stdin client))]
+              captured  (vec (fixture/recorded-stdin client))]
           (is (= elf-bytes (subvec captured 4))
               "the rig reads the RTT ELF on standard input, after its length frame")
           (is (= (count elf-bytes)
@@ -133,8 +133,8 @@
       (let [session (process/process ["bb" "-m" "probetron.client.tunnel-fixture"
                                       (:directory client) "connect"]
                                      {:out :string :err :string})
-            pids (into {} (map (fn [name] [name (fixture/await-pid! client name)]))
-                       fixture/programs)]
+            pids    (into {} (map (fn [name] [name (fixture/await-pid! client name)]))
+                          fixture/programs)]
         (is (every? some? (vals pids)) "the session runs both helpers before the signal arrives")
         (stand-in/signal! "-TERM" (.pid (:proc session)))
         (is (.waitFor ^Process (:proc session) 15000 TimeUnit/MILLISECONDS)
@@ -172,12 +172,12 @@
 (defn session-record
   "Return everything one finished session said, ran, and left behind."
   [client session exit]
-  {:exit exit
-   :out (str (:out session))
-   :err (str (:err session))
-   :calls @(:calls session)
+  {:exit           exit
+   :out            (str (:out session))
+   :err            (str (:err session))
+   :calls          @(:calls session)
    :remote-command (fixture/remote-command client)
-   :volatile (mapv str (fs/list-dir (fixture/path client "run")))})
+   :volatile       (mapv str (fs/list-dir (fixture/path client "run")))})
 
 (def ssh-options
   "The options that every Probetron SSH invocation carries."

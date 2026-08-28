@@ -15,15 +15,15 @@
    The first argument is the directory that carries the lock, the metadata, and
    the recorded pids, and --reset-on-exit asks for the optional reset."
   [directory & flags]
-  (let [operation {:operation :connect
-                   :channel :usb
+  (let [operation {:operation        :connect
+                   :channel          :usb
                    :usb-wait-seconds 10
-                   :rtt nil
-                   :reset-on-exit? (boolean (some #{"--reset-on-exit"} flags))}
-        runtime (runner/runtime {:paths {:lock (str (fs/path directory "target.lock"))
-                                         :active (str (fs/path directory "active.edn"))}
-                                 :reset-target! (fn [_runtime] (record-reset! directory))
-                                 :perform (fn [_operation session] (hold! directory session))})]
+                   :rtt              nil
+                   :reset-on-exit?   (boolean (some #{"--reset-on-exit"} flags))}
+        runtime   (runner/runtime {:paths         {:lock   (str (fs/path directory "target.lock"))
+                                                   :active (str (fs/path directory "active.edn"))}
+                                   :reset-target! (fn [_runtime] (record-reset! directory))
+                                   :perform       (fn [_operation session] (hold! directory session))})]
     (System/exit (runner/execute! operation runtime))))
 
 (defn hold!

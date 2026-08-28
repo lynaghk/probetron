@@ -9,14 +9,14 @@
   {:operation :flash :host "pi" :chip "RP2350" :speed-khz 1000 :elf "firmware.elf"})
 
 (def connect-operation
-  {:operation :connect
-   :host "pi"
-   :channel :usb
+  {:operation        :connect
+   :host             "pi"
+   :channel          :usb
    :usb-wait-seconds 10
-   :local-port 4444
-   :rtt nil
-   :pty? true
-   :reset-on-exit? false})
+   :local-port       4444
+   :rtt              nil
+   :pty?             true
+   :reset-on-exit?   false})
 
 (deftest exit-statuses
   (is (= 0 operation/exit-ok))
@@ -52,14 +52,14 @@
            (operation/rig-command connect-operation))))
   (testing "a uart channel carries the baud rate instead of the usb wait"
     (is (= ["probetron-rig" "connect" "--channel" "uart" "--baud" "9600" "--reset-on-exit"]
-           (operation/rig-command {:operation :connect
-                                    :host "pi"
-                                    :channel :uart
-                                    :baud 9600
-                                    :local-port nil
-                                    :rtt nil
-                                    :pty? false
-                                    :reset-on-exit? true}))))
+           (operation/rig-command {:operation      :connect
+                                   :host           "pi"
+                                   :channel        :uart
+                                   :baud           9600
+                                   :local-port     nil
+                                   :rtt            nil
+                                   :pty?           false
+                                   :reset-on-exit? true}))))
   (testing "rtt travels as a flag because the elf goes over standard input"
     (is (= ["probetron-rig" "connect" "--channel" "usb" "--usb-wait-seconds" "10"
             "--rtt" "--chip" "RP2350" "--speed-khz" "2000"]
@@ -78,7 +78,7 @@
                   {:operation :reset :host "pi"}
                   {:operation :info :host "pi" :format :edn :speed-khz 20}
                   {:operation :debug :host "pi" :local-port 3333 :reset-on-exit? true}]]
-    (let [argv (rest (operation/rig-command public))
+    (let [argv   (rest (operation/rig-command public))
           result (rig/parse argv {})]
       (is (= :run (:action result)) (str "rig rejected " (pr-str argv)))
       (is (= (:operation public) (:operation (:operation result)))))))
@@ -100,7 +100,7 @@
   (is (str/includes? (first (operation/elf-errors "missing.elf" {:exists? false})) "missing.elf"))
   (is (seq (operation/elf-errors "d" {:exists? true :regular-file? false :size 0 :elf-header? false})))
   (is (seq (operation/elf-errors "a.elf" {:exists? true :regular-file? true :size 4096 :elf-header? false})))
-  (is (seq (operation/elf-errors "a.elf" {:exists? true
+  (is (seq (operation/elf-errors "a.elf" {:exists?       true
                                           :regular-file? true
-                                          :size (inc operation/max-elf-bytes)
-                                          :elf-header? true}))))
+                                          :size          (inc operation/max-elf-bytes)
+                                          :elf-header?   true}))))

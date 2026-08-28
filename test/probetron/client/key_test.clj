@@ -48,7 +48,7 @@
 (deftest every-host-keeps-its-own-cached-key
   (with-rig-key! {:body first-key}
     (fn [rig]
-      (let [one (:path (refresh! rig "pi.lab"))
+      (let [one   (:path (refresh! rig "pi.lab"))
             other (:path (refresh! rig "127.0.0.1"))]
         (is (not= one other))
         (is (fs/exists? one))
@@ -87,11 +87,11 @@
 (deftest a-failed-replacement-stops-the-operation
   (with-rig-key! {:body first-key}
     (fn [rig]
-      (let [runtime (session/runtime
-                     {:env {"XDG_CACHE_HOME" (:cache rig)}
-                      :fetch! (:fetch! rig)
-                      :filesystem {:write-key! (fn [_path _bytes]
-                                                 (throw (ex-info "read-only file system" {})))}})
+      (let [runtime         (session/runtime
+                             {:env        {"XDG_CACHE_HOME" (:cache rig)}
+                              :fetch!     (:fetch! rig)
+                              :filesystem {:write-key! (fn [_path _bytes]
+                                                         (throw (ex-info "read-only file system" {})))}})
             {:keys [error]} (key/refresh! "pi.lab" runtime)]
         (is (str/includes? (str error) "read-only file system"))
         (is (not (fs/exists? (str (:cache rig) "/probetron/keys/pi.lab.key"))))))))
@@ -99,7 +99,7 @@
 (deftest a-client-without-a-cache-home-explains-itself
   (with-rig-key! {:body first-key}
     (fn [rig]
-      (let [runtime (session/runtime {:env {} :fetch! (:fetch! rig)})
+      (let [runtime         (session/runtime {:env {} :fetch! (:fetch! rig)})
             {:keys [error]} (key/refresh! "pi.lab" runtime)]
         (is (str/includes? (str error) "XDG_CACHE_HOME"))
         (is (str/includes? (str error) "HOME"))))))
@@ -117,17 +117,17 @@
 (defn with-rig-key!
   "Serve one key over a local HTTP fixture and give the body a temporary cache home."
   [response body]
-  (let [state (atom (merge {:status 200} response))
-        stop! (server/run-server (fn [_request] @state) {:port 0 :ip "127.0.0.1"})
-        port (:local-port (meta stop!))
-        cache (str (fs/create-temp-dir {:prefix "probetron-client"}))
+  (let [state     (atom (merge {:status 200} response))
+        stop!     (server/run-server (fn [_request] @state) {:port 0 :ip "127.0.0.1"})
+        port      (:local-port (meta stop!))
+        cache     (str (fs/create-temp-dir {:prefix "probetron-client"}))
         requested (atom [])]
     (try
-      (body {:response state
-             :port port
-             :cache cache
+      (body {:response  state
+             :port      port
+             :cache     cache
              :requested requested
-             :fetch! (fixture-fetch! port requested)})
+             :fetch!    (fixture-fetch! port requested)})
       (finally (stop!) (fs/delete-tree cache)))))
 
 (defn fixture-fetch!
@@ -140,7 +140,7 @@
 (defn refresh!
   "Refresh the cached key of one host through the fixture."
   [rig host]
-  (key/refresh! host (session/runtime {:env {"XDG_CACHE_HOME" (:cache rig)}
+  (key/refresh! host (session/runtime {:env    {"XDG_CACHE_HOME" (:cache rig)}
                                        :fetch! (:fetch! rig)})))
 
 (defn cached-text

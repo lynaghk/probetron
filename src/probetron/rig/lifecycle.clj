@@ -18,14 +18,14 @@
    A :none operation never takes the lock, a :short operation holds it for one
    hardware operation, and a :session operation holds it until the outer SSH
    command ends."
-  {:status :none
-   :log :none
-   :info :short
-   :flash :short
-   :erase :short
-   :reset :short
+  {:status  :none
+   :log     :none
+   :info    :short
+   :flash   :short
+   :erase   :short
+   :reset   :short
    :connect :session
-   :debug :session})
+   :debug   :session})
 
 (defn lock-mode
   "Return how long one operation owns the target lock.
@@ -56,7 +56,7 @@
    the rig that a person just reached."
   [probetron held? owner]
   (cond-> {:probetron probetron
-           :lock (if held? :held :free)}
+           :lock      (if held? :held :free)}
     (and held? owner) (assoc :active owner)))
 
 (defn render-status

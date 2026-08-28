@@ -42,7 +42,7 @@
 (defn header-error
   "Return why the ELF32 header does not describe an RP2350 image, or nil."
   [data]
-  (let [machine (u16 data 18)
+  (let [machine  (u16 data 18)
         declared (u16 data 40)]
     (cond
       (not= [0x7f 0x45 0x4c 0x46] (mapv #(u8 data %) (range 4)))
@@ -77,8 +77,8 @@
   [data size]
   (let [offset (u32 data 28)]
     (first (keep (fn [index]
-                   (let [entry (+ offset (* index program-entry-size))
-                         start (u32 data (+ entry 4))
+                   (let [entry  (+ offset (* index program-entry-size))
+                         start  (u32 data (+ entry 4))
                          length (u32 data (+ entry 16))]
                      (when (and (= program-type-load (u32 data entry))
                                 (> (+ start length) size))

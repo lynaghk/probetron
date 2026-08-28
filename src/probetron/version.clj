@@ -52,8 +52,8 @@
    itself even where no repository does."
   [root]
   {:version probetron-version
-   :commit (or (git root "rev-parse" "--short" "HEAD") "unknown")
-   :dirty? (boolean (seq (git root "status" "--porcelain")))})
+   :commit  (or (git root "rev-parse" "--short" "HEAD") "unknown")
+   :dirty?  (boolean (seq (git root "status" "--porcelain")))})
 
 (defn from-resource
   "Return the stamp that bb package baked into the archive, or nil in a checkout."

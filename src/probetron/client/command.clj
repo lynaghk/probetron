@@ -177,8 +177,8 @@
   "Return the directory that carries every cached rig key, or nil without a cache home."
   [env]
   (let [blank->nil (fn [value] (when-not (str/blank? value) value))
-        base (or (blank->nil (get env "XDG_CACHE_HOME"))
-                 (some-> (blank->nil (get env "HOME")) (str "/.cache")))]
+        base       (or (blank->nil (get env "XDG_CACHE_HOME"))
+                       (some-> (blank->nil (get env "HOME")) (str "/.cache")))]
     (when base (str/join "/" (cons base cache-segments)))))
 
 (defn key-file-name

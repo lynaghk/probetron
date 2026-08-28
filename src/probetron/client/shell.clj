@@ -18,9 +18,9 @@
     (if error
       (fail! error)
       (let [{:keys [executables run!]} runtime
-            argv (command/shell-argv {:ssh (:ssh executables)
-                                      :key path
-                                      :host (:host operation)})]
+            argv                       (command/shell-argv {:ssh  (:ssh executables)
+                                                            :key  path
+                                                            :host (:host operation)})]
         (:exit (run! argv {:in :inherit :out :inherit :err :inherit}))))))
 
 (defn fail!

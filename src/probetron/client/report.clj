@@ -10,7 +10,7 @@
   "Assemble the information record of one client and the rig it asked."
   [{:keys [probetron babashka key rig]}]
   {:client {:probetron probetron :babashka babashka :key key}
-   :rig rig})
+   :rig    rig})
 
 (defn render-edn
   "Render one whole information record as EDN."

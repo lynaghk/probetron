@@ -20,7 +20,7 @@
    see the same one."
   [& argv]
   (let [runtime (session/runtime)
-        result (cli/parse (vec argv) {:env (:env runtime) :elf-facts elf-facts})]
+        result  (cli/parse (vec argv) {:env (:env runtime) :elf-facts elf-facts})]
     (System/exit (report! result runtime))))
 
 (defn report!
@@ -54,15 +54,15 @@
     (if-not (fs/exists? file)
       {:exists? false}
       (let [regular? (fs/regular-file? file)]
-        {:exists? true
+        {:exists?       true
          :regular-file? regular?
-         :size (fs/size file)
-         :elf-header? (and regular? (op/elf-header? (file-header file 4)))}))))
+         :size          (fs/size file)
+         :elf-header?   (and regular? (op/elf-header? (file-header file 4)))}))))
 
 (defn file-header
   "Return the leading bytes of a file."
   [file length]
   (with-open [stream (io/input-stream file)]
     (let [buffer (byte-array length)
-          read (.read stream buffer)]
+          read   (.read stream buffer)]
       (vec (take (max read 0) buffer)))))

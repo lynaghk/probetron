@@ -45,8 +45,8 @@
   (is (= "sudo -n /usr/local/sbin/probetron-rig erase --chip RP235x --speed-khz 1000"
          (command/remote-command {:operation :erase :host "pi.lab" :chip "RP235x" :speed-khz 1000})))
   (testing "the flash command carries no client path, because the ELF travels on standard input"
-    (let [text (command/remote-command {:operation :flash :host "pi.lab" :chip "RP235x"
-                                        :speed-khz 4000 :elf "/home/bench/firmware.elf"})]
+    (let [text (command/remote-command {:operation :flash :host "pi.lab"                   :chip "RP235x"
+                                        :speed-khz 4000   :elf  "/home/bench/firmware.elf"})]
       (is (= "sudo -n /usr/local/sbin/probetron-rig flash --chip RP235x --speed-khz 4000" text))
       (is (not (str/includes? text "firmware.elf"))))))
 
@@ -95,7 +95,7 @@
 (defn shell-tokens
   "Return the tokens a POSIX shell reads from quoted values."
   [values]
-  (let [script (str "printf '%s\\0' " (str/join " " (map command/shell-token values)))
+  (let [script        (str "printf '%s\\0' " (str/join " " (map command/shell-token values)))
         {:keys [out]} (process/shell {:out :string :continue true} "/bin/sh" "-c" script)]
     (vec (butlast (str/split out #"\x00" -1)))))
 

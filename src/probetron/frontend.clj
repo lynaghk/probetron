@@ -48,9 +48,9 @@
         (if (some #{"--help" "-h"} remaining)
           {:action :help :text (command-help front-end command) :exit op/exit-ok}
           (parse-command front-end command (vec remaining) context))
-        {:action :error
+        {:action  :error
          :message (str "unknown command " (pr-str head) ": run " program " --help")
-         :exit op/exit-usage}))))
+         :exit    op/exit-usage}))))
 
 (defn usage-lines
   "Return one usage line for every command of one front end."

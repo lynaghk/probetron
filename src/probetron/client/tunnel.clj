@@ -46,7 +46,7 @@
    to go while the forward and the rig target are still opening, and a
    forward that never appeared ends the whole session."
   [operation key-path runtime]
-  (let [port (session-port operation runtime)
+  (let [port  (session-port operation runtime)
         state (atom {:cleaned? false})]
     (try
       (let [ssh (start-ssh! operation key-path port runtime)]
@@ -84,7 +84,7 @@
    The stream stays open afterward, so the same standard input the rig read the
    ELF from goes on serving as the client tether."
   [out elf-path]
-  (let [bytes (fs/read-all-bytes elf-path)
+  (let [bytes  (fs/read-all-bytes elf-path)
         framed (DataOutputStream. ^OutputStream out)]
     (.writeInt framed (alength ^bytes bytes))
     (.write framed ^bytes bytes)
@@ -98,9 +98,9 @@
   [state port {:keys [env executables which make-link-directory! spawn!]}]
   (if-let [socat (which (:socat executables))]
     (let [directory (make-link-directory! (command/volatile-directory env))
-          link (command/pty-link directory)
-          helper (spawn! (command/pty-bridge-command socat link port)
-                         {:out :inherit :err :inherit})]
+          link      (command/pty-link directory)
+          helper    (spawn! (command/pty-bridge-command socat link port)
+                            {:out :inherit :err :inherit})]
       (swap! state assoc :pty helper :pty-directory directory)
       (println link)
       (flush)

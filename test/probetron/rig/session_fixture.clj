@@ -31,7 +31,7 @@
 (def helper-names
   "The stand-ins that replace the owned children of each long session."
   {:connect ["bridge" "bridge-child" "rtt" "rtt-child"]
-   :debug ["dap" "dap-child"]})
+   :debug   ["dap" "dap-child"]})
 
 (defn -main
   "Hold one whole long session in its own process until a signal arrives.
@@ -40,14 +40,14 @@
    reads the same bounded upload that a client would send."
   [directory command & flags]
   (let [reset-on-exit? (boolean (some #{"--reset-on-exit"} flags))
-        operation (case command
-                    "connect" {:operation :connect
-                               :channel :uart
-                               :baud 115200
-                               :rtt {:chip "RP235x" :speed-khz 1000 :elf :stdin}
-                               :reset-on-exit? reset-on-exit?}
-                    "debug" {:operation :debug :reset-on-exit? reset-on-exit?})
-        options {:stdin (when (= "connect" command) :file)}]
+        operation      (case command
+                         "connect" {:operation      :connect
+                                    :channel        :uart
+                                    :baud           115200
+                                    :rtt            {:chip "RP235x" :speed-khz 1000 :elf :stdin}
+                                    :reset-on-exit? reset-on-exit?}
+                         "debug" {:operation :debug :reset-on-exit? reset-on-exit?})
+        options        {:stdin (when (= "connect" command) :file)}]
     (System/exit (runner/execute! operation (appliance! directory (atom []) options)))))
 
 (defn appliance!
@@ -56,23 +56,23 @@
   (let [path (fn [name] (str (fs/path directory name)))]
     (create-appliance! directory)
     (runner/runtime
-     {:paths {:lock (path "target.lock")
-              :active (path "active.edn")
-              :uploads (path "uploads")
-              :dut-log (path "dut.log")}
-      :executables {:probe-rs (path "probe-rs")
-                    :gpioset (path "gpioset")
-                    :socat (path "socat")}
-      :hardware (merge {:spi-device (path "spidev0.0")
-                        :swd-spi-device (path "spidev_swd*")
-                        :gpio-chip (path "gpiochip0")
-                        :uart-device (path "ttyAMA0")
-                        :usb-device (path "probetron-dut")}
-                       hardware)
-      :filesystem (or filesystem {})
-      :stdin (fn [] (upload-stream directory stdin))
-      :spawn! (spawn-adapter directory calls)
-      :perform session/perform!
+     {:paths         {:lock    (path "target.lock")
+                      :active  (path "active.edn")
+                      :uploads (path "uploads")
+                      :dut-log (path "dut.log")}
+      :executables   {:probe-rs (path "probe-rs")
+                      :gpioset  (path "gpioset")
+                      :socat    (path "socat")}
+      :hardware      (merge {:spi-device     (path "spidev0.0")
+                             :swd-spi-device (path "spidev_swd*")
+                             :gpio-chip      (path "gpiochip0")
+                             :uart-device    (path "ttyAMA0")
+                             :usb-device     (path "probetron-dut")}
+                            hardware)
+      :filesystem    (or filesystem {})
+      :stdin         (fn [] (upload-stream directory stdin))
+      :spawn!        (spawn-adapter directory calls)
+      :perform       session/perform!
       :reset-target! (fn [_runtime] (record-reset! directory))})))
 
 (defn create-appliance!
@@ -118,7 +118,7 @@
   [directory stdin]
   (or (get-in @upload-streams [directory :in])
       (let [out (java.io.PipedOutputStream.)
-            in (java.io.PipedInputStream. out (* 1024 1024))]
+            in  (java.io.PipedInputStream. out (* 1024 1024))]
         (when-let [bytes (upload-bytes directory stdin)]
           (doto (java.io.DataOutputStream. out)
             (.writeInt (alength ^bytes bytes))
@@ -187,8 +187,8 @@
   [directory]
   (spit (fs/file (fs/path directory "reset.log"))
         (str "reset"
-             (str/join (for [name (mapcat val helper-names)
-                             :let [pid (recorded-pid directory name)]
+             (str/join (for [name  (mapcat val helper-names)
+                             :let  [pid (recorded-pid directory name)]
                              :when pid]
                          (str " " name "=" (if (stand-in/alive? pid) "alive" "gone"))))
              "\n")

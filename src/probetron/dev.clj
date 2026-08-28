@@ -39,7 +39,7 @@
    overlay and extracts the tree as root."
   [args]
   (let [runtime (session/runtime)
-        host (resolve-host args (:env runtime))]
+        host    (resolve-host args (:env runtime))]
     (if (str/blank? host)
       (fail! "no rig host: pass --host <host> or set PROBETRON_HOST")
       (let [{:keys [path error]} (rig-key/refresh! host runtime)]
@@ -48,8 +48,8 @@
           (do
             (announce! (str "deploying " source-directory "/ to " host ":" code-directory
                             " over an ephemeral tmpfs overlay"))
-            (let [tar (process/process ["tar" "czf" "-" "-C" source-directory "probetron"]
-                                       {:out :pipe :err :inherit})
+            (let [tar  (process/process ["tar" "czf" "-" "-C" source-directory "probetron"]
+                                        {:out :pipe :err :inherit})
                   exit (run-remote! runtime path host (deploy-script) {:in (:out tar)})]
               @tar
               (if (zero? exit)
@@ -63,7 +63,7 @@
   "Remove the dev code overlay on one rig, restoring the image code, and return the status."
   [args]
   (let [runtime (session/runtime)
-        host (resolve-host args (:env runtime))]
+        host    (resolve-host args (:env runtime))]
     (if (str/blank? host)
       (fail! "no rig host: pass --host <host> or set PROBETRON_HOST")
       (let [{:keys [path error]} (rig-key/refresh! host runtime)]
@@ -78,8 +78,8 @@
    carry whatever the caller pipes in and the rig's own output back untouched."
   [runtime key-path host script streams]
   (let [request {:ssh (get-in runtime [:executables :ssh]) :key key-path :host host}
-        argv (command/ssh-argv request [] (remote-command script))
-        result ((:run! runtime) argv (merge {:out :inherit :err :inherit} streams))]
+        argv    (command/ssh-argv request [] (remote-command script))
+        result  ((:run! runtime) argv (merge {:out :inherit :err :inherit} streams))]
     (:exit result)))
 
 (defn remote-command
@@ -115,9 +115,9 @@
 (defn resolve-host
   "Return the rig host from --host, a bare argument, or PROBETRON_HOST."
   [args env]
-  (let [args (vec args)
+  (let [args    (vec args)
         flagged (second (drop-while #(not= "--host" %) args))
-        bare (first (remove #(str/starts-with? % "-") args))]
+        bare    (first (remove #(str/starts-with? % "-") args))]
     (or flagged bare (get env "PROBETRON_HOST"))))
 
 (defn announce!

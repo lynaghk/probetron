@@ -51,9 +51,9 @@
     (try
       (platform!)
       (let [[named node] (split-argv argv)
-            image (resolve-image! named)
-            disks (enumerate!)
-            removable (order-disks (selectable disks))]
+            image        (resolve-image! named)
+            disks        (enumerate!)
+            removable    (order-disks (selectable disks))]
         (verify-image! image)
         (if node
           (if-let [disk (find-disk node removable)]
@@ -129,12 +129,12 @@
 (defn disk-record
   "Return the one record of a whole disk from its list entry and its info map."
   [node entry info]
-  {:node (str "/dev/" node)
-   :raw-node (str "/dev/r" node)
-   :name (or (not-empty (:MediaName info)) (:IORegistryEntryName info) node)
-   :size (:Size info)
+  {:node      (str "/dev/" node)
+   :raw-node  (str "/dev/r" node)
+   :name      (or (not-empty (:MediaName info)) (:IORegistryEntryName info) node)
+   :size      (:Size info)
    :internal? (true? (:Internal info))
-   :mounts (partition-mounts entry)})
+   :mounts    (partition-mounts entry)})
 
 (defn partition-mounts
   "Return every mount point of one whole disk, across plain and APFS volumes."
@@ -257,7 +257,7 @@
       (binding [*out* *err*]
         (println (str "flash: no " (fs/file-name record) " beside the image, so its contents go unchecked")))
       (let [expected (first (str/split (str/trim (slurp (fs/file record))) #"\s+"))
-            found (sha-256-file image)]
+            found    (sha-256-file image)]
         (when-not (= expected found)
           (fail! (str "the image " (fs/file-name (fs/path image)) " has digest " found
                       " and " (fs/file-name record) " records " expected
@@ -267,9 +267,9 @@
   "Return one record for every physical whole disk that diskutil reports."
   []
   (let [report (json! "diskutil list -plist physical" "cannot list the disks")
-        facts (into {} (for [node (:WholeDisks report)]
-                         [node (json! (str "diskutil info -plist " node)
-                                      (str "cannot read disk " node))]))]
+        facts  (into {} (for [node (:WholeDisks report)]
+                          [node (json! (str "diskutil info -plist " node)
+                                       (str "cannot read disk " node))]))]
     (disk-records report facts)))
 
 (defn menu!
@@ -313,8 +313,8 @@
   (stream! ["sudo" "-v"] "flash needs administrator rights to write the disk")
   (println (str "Writing " (fs/file-name (fs/path image)) " -> " raw-node))
   (let [total (uncompressed-size! image)
-        xz (process/process ["xz" "--decompress" "--stdout" image] {:err :inherit})
-        dd (process/process ["sudo" "dd" (str "of=" raw-node) "bs=1m"] {:out :inherit :err :inherit})]
+        xz    (process/process ["xz" "--decompress" "--stdout" image] {:err :inherit})
+        dd    (process/process ["sudo" "dd" (str "of=" raw-node) "bs=1m"] {:out :inherit :err :inherit})]
     (copy-progress! (.getInputStream ^Process (:proc xz))
                     (.getOutputStream ^Process (:proc dd))
                     total)
@@ -373,7 +373,7 @@
    The line repaints on a byte threshold, not every read, so a fast pipe cannot flood the terminal.
    The sink closes at the end to signal dd the end of the image."
   [source sink total]
-  (let [buffer (byte-array 1048576)
+  (let [buffer  (byte-array 1048576)
         started (System/currentTimeMillis)]
     (loop [done 0 painted -1]
       (let [n (.read source buffer)]

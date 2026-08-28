@@ -61,12 +61,12 @@
       :unavailable (fail! (str "cannot take the target lock " (:lock paths)
                                " (flock exit " exit "): check the rig installation"))
       :taken
-      (let [state (atom {:holder holder
-                         :groups []
-                         :operation (:operation operation)
-                         :channel (:channel operation)
+      (let [state (atom {:holder         holder
+                         :groups         []
+                         :operation      (:operation operation)
+                         :channel        (:channel operation)
                          :reset-on-exit? (true? (:reset-on-exit? operation))
-                         :cleaned? false})]
+                         :cleaned?       false})]
         (try
           (write-active! runtime (lifecycle/active-metadata operation (pid) (java.time.Instant/now)))
           (log-event! runtime :session-start
@@ -102,11 +102,11 @@
    the tether that follows it. It runs on a daemon thread, so a session that
    ended another way never keeps the rig from exiting."
   [state {:keys [stdin] :as runtime}]
-  (let [in ^InputStream (stdin)
-        watch (fn []
-                (try (loop [] (when (<= 0 (.read in)) (recur)))
-                     (catch IOException _ nil))
-                (clean-up! state runtime))
+  (let [in     ^InputStream (stdin)
+        watch  (fn []
+                 (try (loop [] (when (<= 0 (.read in)) (recur)))
+                      (catch IOException _ nil))
+                 (clean-up! state runtime))
         thread (doto (Thread. ^Runnable watch "probetron-stdin-tether")
                  (.setDaemon true))]
     (.start thread)))
@@ -118,12 +118,12 @@
    can outlive the rig, and :stopping? tells a waiting operation that the
    child it watched died in that cleanup rather than on its own."
   [state runtime]
-  {:runtime runtime
+  {:runtime       runtime
    :start-helper! (fn [argv opts] (start-helper! state runtime argv opts))
    ;; A session starts the client tether once it has read any upload, so the
    ;; tether reads only the standard input that outlives the upload.
    :watch-client! (fn [] (watch-stdin! state runtime))
-   :stopping? (fn [] (true? (:cleaned? @state)))})
+   :stopping?     (fn [] (true? (:cleaned? @state)))})
 
 (defn start-helper!
   "Start one long-running helper as its own process group and own it until cleanup."
@@ -138,7 +138,7 @@
    It runs once, whether the operation finished, the client disconnected, or a
    handled signal arrived, and the default path leaves the target alone."
   [state runtime]
-  (let [mine (promise)
+  (let [mine     (promise)
         [before] (swap-vals! state
                              (fn [s] (if (:cleaned? s)
                                        s
@@ -198,7 +198,7 @@
    write is a lost line, not a lost session."
   [{:keys [paths]} event fields]
   (try
-    (let [file (fs/file (:dut-log paths))
+    (let [file  (fs/file (:dut-log paths))
           entry (into {:at (java.util.Date.) :event event}
                       (remove (comp nil? val) fields))]
       (fs/create-dirs (fs/parent file))
@@ -257,7 +257,7 @@
 (defn report-status!
   "Report the state of the target lock and its owner without opening the hardware."
   [{:keys [format]} {:keys [paths] :as runtime}]
-  (let [lock (probe-lock runtime)
+  (let [lock  (probe-lock runtime)
         held? (= :held lock)]
     (if (= :unavailable lock)
       (fail! (str "cannot read the target lock " (:lock paths) ": check the rig installation"))
@@ -318,25 +318,25 @@
 
 (def default-paths
   "Every fixed rig path: the volatile state of one operation and the identity of the image."
-  {:lock "/run/probetron/target.lock"
-   :active "/run/probetron/active.edn"
-   :dut-log "/run/probetron/dut.log"
-   :uploads hardware/upload-directory
+  {:lock       "/run/probetron/target.lock"
+   :active     "/run/probetron/active.edn"
+   :dut-log    "/run/probetron/dut.log"
+   :uploads    hardware/upload-directory
    :os-release "/etc/os-release"
-   :hostname "/etc/hostname"
+   :hostname   "/etc/hostname"
    :machine-id "/etc/machine-id"})
 
 (def default-executables
   "Every appliance executable that the shell runs, by absolute path."
-  {:flock "/usr/bin/flock"
-   :setsid "/usr/bin/setsid"
-   :kill "/bin/kill"
-   :cat "/bin/cat"
-   :noop "/bin/true"
-   :script hardware/script-executable
+  {:flock    "/usr/bin/flock"
+   :setsid   "/usr/bin/setsid"
+   :kill     "/bin/kill"
+   :cat      "/bin/cat"
+   :noop     "/bin/true"
+   :script   hardware/script-executable
    :probe-rs hardware/probe-rs-executable
-   :gpioset hardware/gpioset-executable
-   :socat hardware/socat-executable})
+   :gpioset  hardware/gpioset-executable
+   :socat    hardware/socat-executable})
 
 (def default-hardware
   "The fixed target slot that every hardware command addresses."
@@ -344,25 +344,25 @@
 
 (def default-filesystem
   "The real filesystem behind the runtime."
-  {:directory? fs/directory?
-   :exists? fs/exists?
-   :readable? fs/readable?
-   :glob #'glob-paths
-   :read-file (fn [path] (when (fs/exists? path) (slurp (fs/file path))))
-   :write-file! #'write-atomically!
+  {:directory?   fs/directory?
+   :exists?      fs/exists?
+   :readable?    fs/readable?
+   :glob         #'glob-paths
+   :read-file    (fn [path] (when (fs/exists? path) (slurp (fs/file path))))
+   :write-file!  #'write-atomically!
    :delete-file! fs/delete-if-exists})
 
 (def default-runtime
   "The production wiring of the current process and subprocesses."
-  {:paths default-paths
+  {:paths       default-paths
    :executables default-executables
-   :filesystem default-filesystem
-   :hardware default-hardware
-   :pid (fn [] (.pid (java.lang.ProcessHandle/current)))
-   :stdin (fn [] System/in)
-   :spawn! process/process
-   :run! (fn [argv opts]
-           @(process/process argv (merge {:out :inherit :err :inherit :throw false} opts)))})
+   :filesystem  default-filesystem
+   :hardware    default-hardware
+   :pid         (fn [] (.pid (java.lang.ProcessHandle/current)))
+   :stdin       (fn [] System/in)
+   :spawn!      process/process
+   :run!        (fn [argv opts]
+                  @(process/process argv (merge {:out :inherit :err :inherit :throw false} opts)))})
 
 (defn glob-paths
   "Return every existing path that one absolute glob pattern names."

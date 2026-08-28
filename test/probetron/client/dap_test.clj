@@ -66,7 +66,7 @@
       (let [session (process/process ["bb" "-m" "probetron.client.tunnel-fixture"
                                       (:directory client) "debug"]
                                      {:out :string :err :string})
-            ssh (fixture/await-pid! client "ssh")]
+            ssh     (fixture/await-pid! client "ssh")]
         (is (some? ssh) "the session reaches the rig before the signal arrives")
         (stand-in/signal! "-TERM" (.pid (:proc session)))
         (is (.waitFor ^Process (:proc session) 15000 TimeUnit/MILLISECONDS)

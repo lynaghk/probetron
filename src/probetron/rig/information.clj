@@ -10,14 +10,14 @@
 (defn report
   "Assemble the information record of one rig from what the shell gathered."
   [{:keys [probetron babashka probe-rs os hostname machine-id probe-selector protocol target]}]
-  {:probetron probetron
-   :babashka babashka
-   :probe-rs (first-line probe-rs)
-   :os (pretty-name os)
-   :hostname (first-line hostname)
+  {:probetron  probetron
+   :babashka   babashka
+   :probe-rs   (first-line probe-rs)
+   :os         (pretty-name os)
+   :hostname   (first-line hostname)
    :machine-id (first-line machine-id)
-   :probe {:selector probe-selector :protocol protocol}
-   :target (str/trim (or target ""))})
+   :probe      {:selector probe-selector :protocol protocol}
+   :target     (str/trim (or target ""))})
 
 (defn render
   "Render an information record as human text or as EDN."

@@ -105,8 +105,8 @@
     (let [{:keys [opts args]} (cli/parse-args argv {:spec spec :restrict true})]
       {:opts opts :args (vec args)})
     (catch Exception exception
-      {:option-error {:option (:option (ex-data exception))
-                      :cause (:cause (ex-data exception))
+      {:option-error {:option  (:option (ex-data exception))
+                      :cause   (:cause (ex-data exception))
                       :message (ex-message exception)}})))
 
 (defn collect
@@ -188,9 +188,9 @@
     (finish (collect [:host :speed-khz :format] context)
             [(unexpected-argument-error args)]
             (fn [values] {:operation :info
-                          :host (:host values)
+                          :host      (:host values)
                           :speed-khz (:speed-khz values)
-                          :format (:format values)}))
+                          :format    (:format values)}))
 
     :flash
     (let [elf (first args)]
@@ -199,17 +199,17 @@
                      (unexpected-argument-error (rest args))]
                     (when elf (elf-errors elf (elf-facts elf))))
               (fn [values] {:operation :flash
-                            :host (:host values)
-                            :chip (:chip values)
+                            :host      (:host values)
+                            :chip      (:chip values)
                             :speed-khz (:speed-khz values)
-                            :elf elf})))
+                            :elf       elf})))
 
     :erase
     (finish (collect (into [:host] chip-and-speed-fields) context)
             [(unexpected-argument-error args)]
             (fn [values] {:operation :erase
-                          :host (:host values)
-                          :chip (:chip values)
+                          :host      (:host values)
+                          :chip      (:chip values)
                           :speed-khz (:speed-khz values)}))
 
     :reset
@@ -223,25 +223,25 @@
             (fn [values] {:operation :log :host (:host values)}))
 
     :connect
-    (let [[values errors] (collect [:host :channel :local-port] context)
-          channel (:channel values)
-          rtt-path (:rtt opts)
-          rtt? (some? rtt-path)
+    (let [[values errors]         (collect [:host :channel :local-port] context)
+          channel                 (:channel values)
+          rtt-path                (:rtt opts)
+          rtt?                    (some? rtt-path)
           [rtt-values rtt-errors] (collect (connect-fields channel rtt?) context)]
       (finish [(merge values rtt-values) (into errors rtt-errors)]
               (into (conj (connect-option-errors opts channel rtt? "--rtt <elf>")
                           (unexpected-argument-error args))
                     (when rtt-path (elf-errors rtt-path (elf-facts rtt-path))))
               (fn [values]
-                (cond-> {:operation :connect
-                         :host (:host values)
-                         :channel (:channel values)
-                         :local-port (:local-port values)
-                         :rtt (when rtt-path
-                                {:elf rtt-path
-                                 :chip (:chip values)
-                                 :speed-khz (:speed-khz values)})
-                         :pty? (true? (:pty opts))
+                (cond-> {:operation      :connect
+                         :host           (:host values)
+                         :channel        (:channel values)
+                         :local-port     (:local-port values)
+                         :rtt            (when rtt-path
+                                           {:elf       rtt-path
+                                            :chip      (:chip values)
+                                            :speed-khz (:speed-khz values)})
+                         :pty?           (true? (:pty opts))
                          :reset-on-exit? (true? (:reset-on-exit opts))}
                   (= :uart (:channel values)) (assoc :baud (:baud values))
                   (= :usb (:channel values)) (assoc :usb-wait-seconds (:usb-wait-seconds values))))))
@@ -249,9 +249,9 @@
     :debug
     (finish (collect [:host :local-port] context)
             [(unexpected-argument-error args)]
-            (fn [values] {:operation :debug
-                          :host (:host values)
-                          :local-port (:local-port values)
+            (fn [values] {:operation      :debug
+                          :host           (:host values)
+                          :local-port     (:local-port values)
                           :reset-on-exit? (true? (:reset-on-exit opts))}))
 
     :shell
@@ -287,26 +287,26 @@
 
 (def fields
   "How every option-carried value is named, defaulted, and validated."
-  {:host {:flag "--host" :label "<host>" :env-var "PROBETRON_HOST" :parse #'parse-host :required? true}
-   :chip {:flag "--chip" :label "<chip>" :env-var "PROBETRON_CHIP" :parse #'parse-chip :required? true}
-   :speed-khz {:flag "--speed-khz" :label "<speed>" :env-var "PROBETRON_SPEED_KHZ"
-               :parse #'parse-speed-khz :default default-speed-khz}
-   :baud {:flag "--baud" :label "<baud>" :env-var "PROBETRON_UART_BAUD"
-          :parse #'parse-baud :default default-baud}
-   :usb-wait-seconds {:flag "--usb-wait-seconds" :label "<seconds>" :env-var "PROBETRON_USB_WAIT_SECONDS"
+  {:host             {:flag "--host" :label "<host>" :env-var "PROBETRON_HOST" :parse #'parse-host :required? true}
+   :chip             {:flag "--chip" :label "<chip>" :env-var "PROBETRON_CHIP" :parse #'parse-chip :required? true}
+   :speed-khz        {:flag  "--speed-khz"     :label   "<speed>"         :env-var "PROBETRON_SPEED_KHZ"
+                      :parse #'parse-speed-khz :default default-speed-khz}
+   :baud             {:flag  "--baud"     :label   "<baud>"     :env-var "PROBETRON_UART_BAUD"
+                      :parse #'parse-baud :default default-baud}
+   :usb-wait-seconds {:flag  "--usb-wait-seconds"     :label   "<seconds>"              :env-var "PROBETRON_USB_WAIT_SECONDS"
                       :parse #'parse-usb-wait-seconds :default default-usb-wait-seconds}
-   :local-port {:flag "--local-port" :label "<port>" :parse #'parse-local-port}
-   :channel {:flag "--channel" :label "<usb|uart>" :parse #'parse-channel :required? true}
-   :format {:flag "--format" :label "<text|edn>" :parse #'parse-format :default :text}})
+   :local-port       {:flag "--local-port" :label "<port>" :parse #'parse-local-port}
+   :channel          {:flag "--channel" :label "<usb|uart>" :parse #'parse-channel :required? true}
+   :format           {:flag "--format" :label "<text|edn>" :parse #'parse-format :default :text}})
 
 (defn resolve-field
   "Resolve one field from the explicit option, the environment, and the default."
   [field {:keys [opts env use-env?]}]
   (let [{:keys [flag env-var parse default required?]} (get fields field)
-        explicit (get opts field)
-        from-environment (when (and use-env? env-var) (get env env-var))
-        raw (if (some? explicit) explicit from-environment)
-        source (if (some? explicit) flag env-var)]
+        explicit                                       (get opts field)
+        from-environment                               (when (and use-env? env-var) (get env env-var))
+        raw                                            (if (some? explicit) explicit from-environment)
+        source                                         (if (some? explicit) flag env-var)]
     (cond
       (some? raw) (let [result (parse raw)]
                     (if (contains? result :value)

@@ -32,8 +32,8 @@
 (deftest packages-a-deterministic-release-archive
   (with-build-dir
     (fn [build]
-      (let [built "2026-01-01T00:00:00Z"
-            first-run (package/package! {:root "." :build-dir build :built built})
+      (let [built      "2026-01-01T00:00:00Z"
+            first-run  (package/package! {:root "." :build-dir build :built built})
             second-run (package/package! {:root "." :build-dir build :built built})]
         (testing "the release names itself after the VERSION file"
           (is (nil? (:error first-run)))
@@ -73,14 +73,14 @@
   (with-build-dir
     (fn [build]
       (let [{:keys [archive]} (package/package! {:root "." :build-dir build})
-            install (fs/path build "install")]
+            install           (fs/path build "install")]
         (fs/create-dirs install)
         (process/shell "tar" "-xzf" archive "-C" (str install))
         (doseq [name ["probetron" "probetron-rig"]]
           (let [program (fs/path install "bin" name)]
             (is (fs/executable? program) (str name " keeps its executable mode"))
             (let [{:keys [exit out]} (process/shell {:out :string :err :string :continue true}
-                                                   (str program) "--help")]
+                                                    (str program) "--help")]
               (is (= operation/exit-ok exit))
               (is (str/includes? out "Usage:")))))))))
 
@@ -97,14 +97,14 @@
 
 (deftest a-release-refuses-a-command-line-without-a-tag-value
   (let [complaint (java.io.StringWriter.)
-        status (binding [*err* complaint] (package/main! ["--tag"]))]
+        status    (binding [*err* complaint] (package/main! ["--tag"]))]
     (is (= operation/exit-usage status))
     (is (str/includes? (str complaint) "--tag"))))
 
 (deftest a-release-refuses-an-archive-outside-the-build-directory
   (with-build-dir
     (fn [build]
-      (let [{:keys [error]} (package/package! {:root "." :build-dir (str (fs/path build "elsewhere"))
+      (let [{:keys [error]} (package/package! {:root         "."                :build-dir (str (fs/path build "elsewhere"))
                                                :archive-name "../escape.tar.gz"})]
         (is (str/includes? error "outside the build directory"))
         (is (not (fs/exists? (fs/path build "escape.tar.gz"))))))))

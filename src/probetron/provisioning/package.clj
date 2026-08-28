@@ -58,7 +58,7 @@
 (defn main!
   "Build a release archive from a command line and return an exit status."
   [argv]
-  (let [argv (vec argv)
+  (let [argv                                   (vec argv)
         {:keys [args option-error] :as parsed} (op/parse-options argv {:tag {:coerce :string}})]
     (cond
       (some #{"--help" "-h"} argv) (do (println usage) op/exit-ok)
@@ -82,26 +82,26 @@
    Every source member carries a fixed mode, owner, and time and arrives in one
    sorted order, so two runs differ only in the build stamp that names them."
   [{:keys [root build-dir tag built] :as request}]
-  (let [root (or root ".")
-        build-dir (or build-dir (str (fs/normalize (fs/path root build-directory))))
+  (let [root         (or root ".")
+        build-dir    (or build-dir (str (fs/normalize (fs/path root build-directory))))
         version-file (str (fs/path root "VERSION"))
-        outline (if (fs/regular-file? version-file)
-                  (plan {:root root :tag tag
-                         :declared (slurp version-file)
-                         :library (library-sources root)})
-                  (failure (str "cannot read " version-file
-                                ": run the release from the Probetron project directory")))]
+        outline      (if (fs/regular-file? version-file)
+                       (plan {:root     root                   :tag tag
+                              :declared (slurp version-file)
+                              :library  (library-sources root)})
+                       (failure (str "cannot read " version-file
+                                     ": run the release from the Probetron project directory")))]
     (if (:error outline)
       outline
-      (let [built (or built (version/now))
-            members (vec (sort-by :path (conj (:members outline)
-                                              (stamp-member root (:version outline) built))))
-            missing (->> members
-                         (filter #(= :file (:kind %)))
-                         (remove :content)
-                         (remove #(fs/regular-file? (:source %))))
-            archive-file (fs/path build-dir (or (:archive-name request)
-                                                (archive-name (:version outline))))
+      (let [built         (or built (version/now))
+            members       (vec (sort-by :path (conj (:members outline)
+                                                    (stamp-member root (:version outline) built))))
+            missing       (->> members
+                               (filter #(= :file (:kind %)))
+                               (remove :content)
+                               (remove #(fs/regular-file? (:source %))))
+            archive-file  (fs/path build-dir (or (:archive-name request)
+                                                 (archive-name (:version outline))))
             checksum-file (fs/path (str archive-file ".sha256"))]
         (cond
           (seq missing)
@@ -112,20 +112,20 @@
           (failure (str "the archive " archive-file " lies outside the build directory " build-dir))
 
           :else
-          (let [staged (for [member members]
-                         (cond-> member
-                           (and (= :file (:kind member)) (not (:content member)))
-                           (assoc :content (fs/read-all-bytes (:source member)))))
+          (let [staged  (for [member members]
+                          (cond-> member
+                            (and (= :file (:kind member)) (not (:content member)))
+                            (assoc :content (fs/read-all-bytes (:source member)))))
                 content (archive/gzip (archive/tar staged))
-                digest (archive/sha-256-hex content)]
+                digest  (archive/sha-256-hex content)]
             (fs/create-dirs build-dir)
             (write-file! archive-file content)
             (write-file! checksum-file (.getBytes (checksum-line digest (fs/file-name archive-file)) "UTF-8"))
-            {:version (:version outline)
-             :archive (str archive-file)
+            {:version  (:version outline)
+             :archive  (str archive-file)
              :checksum (str checksum-file)
-             :sha256 digest
-             :members (mapv :path members)}))))))
+             :sha256   digest
+             :members  (mapv :path members)}))))))
 
 (defn plan
   "Return the pure release plan of one source tree.
@@ -140,7 +140,7 @@
     (if (:error chosen)
       chosen
       (let [entries (members root (library-members root library))
-            unsafe (some unsafe-member entries)]
+            unsafe  (some unsafe-member entries)]
         (if unsafe
           (failure unsafe)
           {:version (:version chosen) :members entries})))))
@@ -172,7 +172,7 @@
   "Return every source file that a release ships, in sorted order."
   [root]
   (let [source-root (fs/path root "src")
-        unshipped (str (fs/path "probetron" unshipped-directory) "/")]
+        unshipped   (str (fs/path "probetron" unshipped-directory) "/")]
     (->> (fs/glob source-root "**/*.clj")
          (remove #(str/starts-with? (str (fs/relativize source-root %)) unshipped))
          (map str)
@@ -184,10 +184,10 @@
   (let [source-root (fs/path root "src")]
     (->> paths
          (map (fn [path]
-                {:path (str (fs/path library-root (str (fs/relativize source-root path))))
+                {:path   (str (fs/path library-root (str (fs/relativize source-root path))))
                  :source (str path)
-                 :kind :file
-                 :mode file-mode}))
+                 :kind   :file
+                 :mode   file-mode}))
          (sort-by :path)
          vec)))
 
@@ -208,10 +208,10 @@
    and writes lib/probetron/build.edn straight into the archive, so an installed
    tree names the build it came from without any file in the source tree."
   [root version built]
-  {:path (str (fs/path library-root "probetron" "build.edn"))
-   :source :generated
-   :kind :file
-   :mode file-mode
+  {:path    (str (fs/path library-root "probetron" "build.edn"))
+   :source  :generated
+   :kind    :file
+   :mode    file-mode
    :content (.getBytes (str (pr-str (assoc (version/git-stamp root)
                                            :version version :built built)) "\n")
                        "UTF-8")})

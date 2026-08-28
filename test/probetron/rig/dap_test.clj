@@ -36,7 +36,7 @@
 (deftest the-dap-session-names-the-discovered-swd-bus-and-no-other-spi-bus
   (let [{:keys [out calls]} (session-test/with-running-session! debug-operation dap-session
                               (fn [_] nil))
-        argv (:argv (session-test/helper-call calls "dap"))]
+        argv                (:argv (session-test/helper-call calls "dap"))]
     (is (re-find #"(?m)^probe: 0:0:\S+/spidev_swd0 swd$" out)
         "the session names the probe selector that a DAP client request repeats")
     (is (not-any? #(str/includes? % "spidev") argv)
@@ -54,7 +54,7 @@
   (session-test/with-running-session! debug-operation dap-session
     (fn [{:keys [directory session]}]
       (let [server (fixture/await-pid! directory "dap")
-            port (parse-long (fixture/await-file! directory "dap.port"))]
+            port   (parse-long (fixture/await-file! directory "dap.port"))]
         (visit-dap! port)
         (await-sessions! directory 1)
         (is (stand-in/alive? server) "the DAP server outlives the client that left")
@@ -84,7 +84,7 @@
 (deftest a-handled-signal-removes-the-dap-process-group-and-releases-the-lock
   (let [directory (session-test/temporary-directory)]
     (try
-      (let [rig (session-test/start-fixture! directory "debug")
+      (let [rig  (session-test/start-fixture! directory "debug")
             pids (into {} (map (fn [name] [name (fixture/await-pid! directory name)]))
                        (:debug fixture/helper-names))]
         (is (every? some? (vals pids)) "the server runs before the signal arrives")
@@ -112,7 +112,7 @@
   "Wait until the DAP server has served the expected number of clients."
   [directory expected]
   (loop [attempts 500]
-    (let [text (or (fixture/await-file! directory "dap.sessions") "")
+    (let [text   (or (fixture/await-file! directory "dap.sessions") "")
           served (count (remove str/blank? (str/split-lines text)))]
       (if (or (<= expected served) (zero? attempts))
         (is (<= expected served) (str "the DAP server must serve " expected " clients"))

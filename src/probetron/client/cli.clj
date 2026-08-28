@@ -57,51 +57,51 @@
   "The options that each public command accepts.
 
    --usb names the rig on the USB console, so every command takes it."
-  (let [value frontend/value-option
-        flag frontend/flag-option
+  (let [value          frontend/value-option
+        flag           frontend/flag-option
         chip-and-speed {:chip value :speed-khz value}]
-    {:info {:host value :usb flag :speed-khz value :format value}
-     :status {:host value :usb flag :format value}
-     :log {:host value :usb flag}
-     :flash (merge {:host value :usb flag} chip-and-speed)
-     :erase (merge {:host value :usb flag} chip-and-speed)
-     :reset {:host value :usb flag}
-     :shell {:host value :usb flag}
-     :connect (merge {:host value
-                      :usb flag
-                      :channel value
-                      :baud value
+    {:info    {:host value :usb flag :speed-khz value :format value}
+     :status  {:host value :usb flag :format value}
+     :log     {:host value :usb flag}
+     :flash   (merge {:host value :usb flag} chip-and-speed)
+     :erase   (merge {:host value :usb flag} chip-and-speed)
+     :reset   {:host value :usb flag}
+     :shell   {:host value :usb flag}
+     :connect (merge {:host             value
+                      :usb              flag
+                      :channel          value
+                      :baud             value
                       :usb-wait-seconds value
-                      :local-port value
-                      :rtt value
-                      :pty flag
-                      :reset-on-exit flag}
+                      :local-port       value
+                      :rtt              value
+                      :pty              flag
+                      :reset-on-exit    flag}
                      chip-and-speed)
-     :debug {:host value :usb flag :local-port value :reset-on-exit flag}}))
+     :debug   {:host value :usb flag :local-port value :reset-on-exit flag}}))
 
 (def command-usage
   "The documented form of every public command."
-  {:info "  probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]"
-   :status "  probetron status  --host <host> [--format <text|edn>]"
-   :log "  probetron log     --host <host>"
-   :flash "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] <elf>"
-   :erase "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
-   :reset "  probetron reset   --host <host>"
+  {:info    "  probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]"
+   :status  "  probetron status  --host <host> [--format <text|edn>]"
+   :log     "  probetron log     --host <host>"
+   :flash   "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] <elf>"
+   :erase   "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
+   :reset   "  probetron reset   --host <host>"
    :connect (str "  probetron connect --host <host> --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--local-port <port>]"
                  " [--rtt <elf> --chip <chip> [--speed-khz <speed>]] [--pty] [--reset-on-exit]")
-   :debug "  probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]"
-   :shell "  probetron shell   --host <host> | --usb"})
+   :debug   "  probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]"
+   :shell   "  probetron shell   --host <host> | --usb"})
 
 (def front-end
   "How the public command line reaches the operation model.
 
    The client reads environment defaults, and every ELF path it takes is a
    client path that validation probes before the operation leaves."
-  {:program "probetron"
-   :help-text help-text
-   :commands commands
+  {:program       "probetron"
+   :help-text     help-text
+   :commands      commands
    :command-specs command-specs
    :command-usage command-usage
-   :use-env? true
-   :build op/build})
+   :use-env?      true
+   :build         op/build})

@@ -37,19 +37,19 @@
    helper and an outer SSH process to remove, while a debug session has the
    outer SSH process alone."
   [directory command & _flags]
-  (let [client (client! {:directory directory})
+  (let [client    (client! {:directory directory})
         operation (case command
-                    "connect" {:operation :connect
-                               :host host
-                               :channel :uart
-                               :baud 115200
-                               :local-port nil
-                               :rtt nil
-                               :pty? true
+                    "connect" {:operation      :connect
+                               :host           host
+                               :channel        :uart
+                               :baud           115200
+                               :local-port     nil
+                               :rtt            nil
+                               :pty?           true
                                :reset-on-exit? false}
-                    "debug" {:operation :debug
-                             :host host
-                             :local-port nil
+                    "debug" {:operation      :debug
+                             :host           host
+                             :local-port     nil
                              :reset-on-exit? false})]
     (System/exit (tunnel/open! operation (runtime! client (atom []))))))
 
@@ -57,7 +57,7 @@
   "Create a temporary client and return the handle that a test drives it with."
   [{:keys [directory remove]}]
   (let [directory (or directory (str (fs/create-temp-dir {:prefix "probetron-tunnel"})))
-        client {:directory directory}]
+        client    {:directory directory}]
     (create-client! client)
     (doseq [name remove] (fs/delete-if-exists (path client name)))
     client))
@@ -115,11 +115,11 @@
    a session leaves nothing anywhere else, and every spawn is recorded."
   [client calls]
   (session/runtime
-   {:env {"XDG_CACHE_HOME" (str (path client "cache"))
-          "XDG_RUNTIME_DIR" (str (path client "run"))}
-    :fetch! (fn [_url] {:body (.getBytes ^String rig-key)})
+   {:env         {"XDG_CACHE_HOME"  (str (path client "cache"))
+                  "XDG_RUNTIME_DIR" (str (path client "run"))}
+    :fetch!      (fn [_url] {:body (.getBytes ^String rig-key)})
     :executables {:ssh (str (path client "ssh")) :socat (str (path client "socat"))}
-    :spawn! (recording-spawn! client calls)}))
+    :spawn!      (recording-spawn! client calls)}))
 
 (defn recording-spawn!
   "Return a spawn function that records every client helper it starts.
@@ -134,14 +134,14 @@
 (defn open!
   "Start one client session against the temporary rig and return the running client."
   [client operation]
-  (let [out (StringWriter.)
-        err (StringWriter.)
-        calls (atom [])
+  (let [out     (StringWriter.)
+        err     (StringWriter.)
+        calls   (atom [])
         runtime (runtime! client calls)]
     {:result (binding [*out* out *err* err] (future (tunnel/open! operation runtime)))
-     :out out
-     :err err
-     :calls calls}))
+     :out    out
+     :err    err
+     :calls  calls}))
 
 (defn answer!
   "Tell the stand-in rig what to say and which status to give the client."

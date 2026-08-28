@@ -29,7 +29,7 @@
       (is (str/includes? err "--nozzle"))))
   (testing "a valid operation leaves validation and reaches the client shell"
     (let [{:keys [exit err]} (run "bin/probetron" ["reset"] {"PROBETRON_HOST" "pi.lab"
-                                                             "HOME" ""
+                                                             "HOME"           ""
                                                              "XDG_CACHE_HOME" ""})]
       (is (not= operation/exit-usage exit))
       (is (= operation/exit-failure exit))
@@ -52,14 +52,14 @@
 (deftest version-names-probetrons-own-checkout-not-the-callers
   (testing "run from another git repo, the version still names probetron's commit and path"
     (let [launcher (str (fs/absolutize (fs/path "bin" "probetron")))
-          head (str/trim (:out (process/shell {:out :string} "git" "rev-parse" "--short" "HEAD")))
-          foreign (fs/create-temp-dir {:prefix "foreign-repo"})]
+          head     (str/trim (:out (process/shell {:out :string} "git" "rev-parse" "--short" "HEAD")))
+          foreign  (fs/create-temp-dir {:prefix "foreign-repo"})]
       (try
         (process/shell {:dir (str foreign)} "git" "init" "-q")
         (process/shell {:dir (str foreign)}
                        "git" "-c" "user.email=t@t" "-c" "user.name=t"
                        "commit" "--allow-empty" "-q" "-m" "foreign")
-        (let [{:keys [exit out]} (process/shell {:out :string :err :string :continue true
+        (let [{:keys [exit out]} (process/shell {:out :string       :err :string :continue true
                                                  :dir (str foreign)}
                                                 launcher "--version")]
           (is (= operation/exit-ok exit))

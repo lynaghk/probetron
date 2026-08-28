@@ -133,25 +133,25 @@
    channel the listener deliberately does not."
   [operation {:keys [runtime stopping?]}]
   (let [{:keys [filesystem]} runtime
-        path (hardware/resource-path runtime (hardware/channel-resource (:channel operation)))
-        present? (fn [] (boolean ((:exists? filesystem) path)))
-        watch (fn []
-                (loop [was? (present?)]
+        path                 (hardware/resource-path runtime (hardware/channel-resource (:channel operation)))
+        present?             (fn [] (boolean ((:exists? filesystem) path)))
+        watch                (fn []
+                               (loop [was? (present?)]
                   ;; Check for the stop after the wait, not before it: a session
                   ;; that ends must not read a phantom departure out of a device
                   ;; path that shutdown itself removed.
-                  (Thread/sleep device-poll-ms)
-                  (when-not (stopping?)
-                    (let [now? (present?)]
-                      (when (not= now? was?)
-                        (if now?
-                          (do (runner/log-event! runtime :dut-link-up {:channel (:channel operation)})
-                              (runner/warn! (str "the DUT returned on " path "; reconnect the byte client")))
-                          (do (runner/log-event! runtime :dut-link-lost {:channel (:channel operation)})
-                              (runner/warn! (str "the DUT went away on " path
-                                                 "; the byte client was dropped with it"
-                                                 " and can reconnect once the DUT returns")))))
-                      (recur now?)))))]
+                                 (Thread/sleep device-poll-ms)
+                                 (when-not (stopping?)
+                                   (let [now? (present?)]
+                                     (when (not= now? was?)
+                                       (if now?
+                                         (do (runner/log-event! runtime :dut-link-up {:channel (:channel operation)})
+                                             (runner/warn! (str "the DUT returned on " path "; reconnect the byte client")))
+                                         (do (runner/log-event! runtime :dut-link-lost {:channel (:channel operation)})
+                                             (runner/warn! (str "the DUT went away on " path
+                                                                "; the byte client was dropped with it"
+                                                                " and can reconnect once the DUT returns")))))
+                                     (recur now?)))))]
     (.start (doto (Thread. ^Runnable watch "probetron-dut-watch") (.setDaemon true)))))
 
 (defn start-bridge!
@@ -189,7 +189,7 @@
    device of the image that either exists now or never will."
   [{:keys [channel usb-wait-seconds]} {:keys [filesystem] :as runtime}]
   (let [resource (hardware/channel-resource channel)
-        path (hardware/resource-path runtime resource)]
+        path     (hardware/resource-path runtime resource)]
     (when (= :usb channel)
       (await-device! filesystem path (or usb-wait-seconds 0)))
     (cond
@@ -217,7 +217,7 @@
    reports success rather than a service that failed."
   [helper service hardware stopping?]
   (let [{:keys [name program port]} (services service)
-        exit (.waitFor ^Process (:proc helper))]
+        exit                        (.waitFor ^Process (:proc helper))]
     (if (or (zero? exit) (stopping?))
       op/exit-ok
       (do (runner/warn! (str "the " name " on " (:loopback hardware) ":" (get hardware port)
@@ -228,4 +228,4 @@
 (def services
   "How each long session names the loopback service that holds the target."
   {:byte {:name "byte service" :program "socat" :port :byte-port}
-   :dap {:name "DAP service" :program "probe-rs" :port :dap-port}})
+   :dap  {:name "DAP service" :program "probe-rs" :port :dap-port}})
