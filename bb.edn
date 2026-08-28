@@ -18,4 +18,10 @@
            :task (System/exit (flash/list-disks! *command-line-args*))}
   flash   {:doc "Write a built image to a removable disk, picked or named (macOS)"
            :requires ([probetron.provisioning.flash :as flash])
-           :task (System/exit (flash/flash! *command-line-args*))}}}
+           :task (System/exit (flash/flash! *command-line-args*))}
+  rig-dev-deploy {:doc "Deploy the working-tree rig code to a rig over SSH, no reflash (development)"
+                  :requires ([probetron.dev :as dev])
+                  :task (System/exit (dev/deploy! *command-line-args*))}
+  rig-dev-reset  {:doc "Remove the dev code overlay on a rig, restoring the image code (development)"
+                  :requires ([probetron.dev :as dev])
+                  :task (System/exit (dev/reset-overlay! *command-line-args*))}}}

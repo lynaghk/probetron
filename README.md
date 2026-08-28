@@ -169,12 +169,12 @@ Hold the board with the USB connector at the top, and the three pads read **SWCL
 RUN is not on those pads: it is pin 30 on the right side of the 40-pin header, the third pin up from the bottom-right corner.
 A bare Pico 2 W ships those three pads unpopulated, so a breakout board that already presents them as pins saves you the soldering.
 
-| Probetron wire            | Pico 2 W point                     |
-| ------------------------- | ---------------------------------- |
-| SWCLK — pin 23            | SWCLK, the left debug pad (square) |
-| SWDIO — pin 19 through 1 kΩ, joined by pin 21 | SWDIO, the right debug pad |
-| RUN — pin 37              | RUN, header pin 30                 |
-| GND — pin 20, 25, or 39   | GND, the middle debug pad          |
+| Probetron wire                                | Pico 2 W point                     |
+| --------------------------------------------- | ---------------------------------- |
+| SWCLK — pin 23                                | SWCLK, the left debug pad (square) |
+| SWDIO — pin 19 through 1 kΩ, joined by pin 21 | SWDIO, the right debug pad         |
+| RUN — pin 37                                  | RUN, header pin 30                 |
+| GND — pin 20, 25, or 39                       | GND, the middle debug pad          |
 
 The three debug pads carry no power, so the DUT still needs its own supply over the USB cable or VSYS.
 The datasheet figure that fixes this order is Figure 4 of the [Pico 2 W datasheet](https://datasheets.raspberrypi.com/picow/pico-2-w-datasheet.pdf).
@@ -614,13 +614,13 @@ Nothing else touches the target on the way out, so a session that ended by accid
 The rig is one immutable appliance: it builds nothing, stores no project state, and asks the internet for nothing.
 Building its image is a deliberate bench operation on one kind of host.
 
-| Prerequisite                                                         | Why                                                                                                                        |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Debian 13 (trixie) on `aarch64`                                      | rpi-image-gen supports native Debian arm64 alone, and the pinned probe-rs is an aarch64 GNU binary                         |
-| root, or `podman` for an ordinary account                            | the build creates a chroot and mounts pseudo-filesystems in a private mount namespace                                      |
-| `git`, `curl`, `tar`, `xz-utils`, `dpkg-dev`, `openssh-client`       | fetching pinned inputs, unpacking them, generating the keypair, and publishing the image                                   |
-| rpi-image-gen build dependencies                                     | `bb image --validate-only` fetches the pinned checkout, and `.cache/rpi-image-gen/install_deps.sh` then installs them once |
-| 10 GiB of free space in `/var/tmp` and a network path to the pinned archives | the chroot, the package cache, and the raw image, which the build writes under `/var/tmp/probetron-work` |
+| Prerequisite                                                                 | Why                                                                                                                        |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Debian 13 (trixie) on `aarch64`                                              | rpi-image-gen supports native Debian arm64 alone, and the pinned probe-rs is an aarch64 GNU binary                         |
+| root, or `podman` for an ordinary account                                    | the build creates a chroot and mounts pseudo-filesystems in a private mount namespace                                      |
+| `git`, `curl`, `tar`, `xz-utils`, `dpkg-dev`, `openssh-client`               | fetching pinned inputs, unpacking them, generating the keypair, and publishing the image                                   |
+| rpi-image-gen build dependencies                                             | `bb image --validate-only` fetches the pinned checkout, and `.cache/rpi-image-gen/install_deps.sh` then installs them once |
+| 10 GiB of free space in `/var/tmp` and a network path to the pinned archives | the chroot, the package cache, and the raw image, which the build writes under `/var/tmp/probetron-work`                   |
 
 ```sh
 bb image
@@ -729,15 +729,15 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 
 `image/config/probetron.yaml` selects the Raspberry Pi 4 device, the `image-rpios` layout, and seven named layers, and each layer owns exactly one runtime invariant.
 
-| Layer                 | Runtime invariant                                                                                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `probetron-runtime`   | The appliance exists: the release archive under `/usr/local`, `bb`, `probe-rs`, `socat`, `gpiod`, `procps`, `sudo`, and `udev`, and the volatile upload directory.     |
-| `probetron-access`    | The lab LAN is the trust boundary: one generated key, an unrestricted `probetron` shell with forwarding, sudo for the one immutable command, and the HTTP key service. |
-| `probetron-hardware`  | The one DUT slot exists and belongs to nobody else: SPI0, UART0 on GPIO14 and GPIO15 with no console, GPIO26 free, and udev rules that reserve every target device.    |
-| `probetron-immutable` | The rig stores nothing: read-only root and boot, sized tmpfs for every writable path, and a journal that dies with its boot.                                           |
-| `probetron-offline`   | The rig asks the internet for nothing: no package timer, no time synchronisation, no radio, and no multicast discovery.                                                |
+| Layer                 | Runtime invariant                                                                                                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `probetron-runtime`   | The appliance exists: the release archive under `/usr/local`, `bb`, `probe-rs`, `socat`, `gpiod`, `procps`, `sudo`, and `udev`, and the volatile upload directory.                                  |
+| `probetron-access`    | The lab LAN is the trust boundary: one generated key, an unrestricted `probetron` shell with forwarding, sudo for the one immutable command, and the HTTP key service.                              |
+| `probetron-hardware`  | The one DUT slot exists and belongs to nobody else: SPI0, UART0 on GPIO14 and GPIO15 with no console, GPIO26 free, and udev rules that reserve every target device.                                 |
+| `probetron-immutable` | The rig stores nothing: read-only root and boot, sized tmpfs for every writable path, and a journal that dies with its boot.                                                                        |
+| `probetron-offline`   | The rig asks the internet for nothing: no package timer, no time synchronisation, no radio, and no multicast discovery.                                                                             |
 | `probetron-console`   | The rig answers whatever the lab network does: the USB-C receptacle in peripheral mode, one Ethernet gadget, a fixed address, a DHCP server for the client, and a report of every boot on the card. |
-| `probetron-boot`      | The rig boots on any Raspberry Pi 4: the by-slot names of root and the boot filesystem come from the partition labels as well as from the bootloader.                    |
+| `probetron-boot`      | The rig boots on any Raspberry Pi 4: the by-slot names of root and the boot filesystem come from the partition labels as well as from the bootloader.                                               |
 
 | Volatile path    | Bound                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------ |
@@ -749,12 +749,12 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 
 `image/manifest.edn` names every pinned archive and digest, except probe-rs, which the `vendor/probe-rs` submodule pins by gitlink.
 
-| Pin            | Value                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------ |
-| rpi-image-gen  | `v2.8.0`, revision `262d4df5a9f9d4133370465399a7958a7c22cdc7`                                    |
-| base           | Debian 13 Trixie arm64, `debian-trixie-arm64-minbase-snapshot` at snapshot `20260801T000000Z`    |
-| Babashka       | 1.13.219, `linux-aarch64-static`, digest pinned, installed as `/usr/local/bin/bb`                |
-| probe-rs       | 0.32.0 fork, compiled from the `vendor/probe-rs` submodule, installed as `/usr/local/bin/probe-rs`   |
+| Pin            | Value                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| rpi-image-gen  | `v2.8.0`, revision `262d4df5a9f9d4133370465399a7958a7c22cdc7`                                              |
+| base           | Debian 13 Trixie arm64, `debian-trixie-arm64-minbase-snapshot` at snapshot `20260801T000000Z`              |
+| Babashka       | 1.13.219, `linux-aarch64-static`, digest pinned, installed as `/usr/local/bin/bb`                          |
+| probe-rs       | 0.32.0 fork, compiled from the `vendor/probe-rs` submodule, installed as `/usr/local/bin/probe-rs`         |
 | DUT receptacle | `:usb-port-label` and `:usb-kernels`, both unrecorded unless a bench needs the rule narrowed to one socket |
 
 The build spends nothing before it knows it can finish: the platform gate, the Rust toolchain check, the pinned checkout, and rpi-image-gen's own validation all run before one byte is fetched, one key is generated, or one image is constructed.
@@ -789,27 +789,27 @@ The recovery from all of them is the same: reboot the rig, and the volatile lock
 
 ## Troubleshooting
 
-| Symptom                                                          | Cause                                                                                                   | Repair                                                                                                                                                                   |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `missing SPI device /dev/spidev0.0`                              | SPI0 is off, or the rig booted an image without the hardware layer                                      | check `dtparam=spi=on` in `/boot/firmware/config.txt`, reboot, and confirm `ls -l /dev/spidev0.0` and the `0:0:/dev/spidev0.0` selector that `probetron info` prints     |
-| `missing SWD SPI device /dev/spidev_swd*`                        | the udev rule that names the SWD bus is absent                                                          | reinstall the rig image, then confirm `ls -l /dev/spidev_swd0` points at `spidev0.0`; only that alias reaches DAP discovery                                              |
-| probe-rs finds no target, or reports an ARM DP error             | SWD wiring, the 1 kΩ orientation, ground, or the SWD clock                                              | check pins 23, 21, and 19 against the wiring table, confirm MISO taps the DUT side of the 1 kΩ resistor, add a ground return on pin 20, then retry, lowering `--speed-khz` when the debug port answers but the memory read does not |
-| `the reset of the target failed with gpioset exit ...`           | GPIO26 cannot drive RUN                                                                                 | check the wire from header pin 37 to RUN, check that nothing else claims GPIO26 with `gpioinfo`, and confirm `/dev/gpiochip0` exists                                     |
-| firmware flashes but never starts                                | RUN is not wired, so only a verified download and no reset reached the DUT                              | wire pin 37 to RUN; `probetron reset` must restart the firmware on its own                                                                                               |
-| `missing UART device /dev/ttyAMA0`                               | UART0 is off, or the serial console still owns it                                                       | check `enable_uart=1` and `dtoverlay=disable-bt` in `config.txt`, confirm no `console=serial0` in `cmdline.txt`, and confirm `serial-getty@ttyAMA0` is masked            |
-| UART bytes are missing or garbled                                | the bit rate, the wire pairing, or a missing ground                                                     | match `--baud` to the firmware, cross TX and RX as the table shows, and share ground on pin 6                                                                            |
-| `missing DUT USB device /dev/probetron-dut`                      | the firmware exposes no CDC, the board sits in BOOTSEL, or a recorded topology in `manifest.edn` is stale   | confirm the firmware enumerates, leave BOOTSEL, and re-run the USB topology check below if `manifest.edn` names a receptacle                                                 |
-| `cannot find socat on this client`                               | the client has no socat, so `--pty` has no pseudo-terminal                                              | `brew install socat` or `apt install socat`; the session and its TCP endpoint keep working meanwhile                                                                     |
-| `cannot fetch the rig key from http://<host>/probetron_key`      | the rig is unreachable, or the key service is down                                                      | ping the address, check the wired LAN and the DHCP reservation, and check `probetron-key.service` on the rig                                                             |
-| `the cached rig key ... has unsafe permissions`                  | something widened the cache file                                                                        | `chmod 600` that file or remove it; the next operation fetches the key again                                                                                             |
-| `the SSH connection to <host> failed` (status 255)               | the address, the LAN, or a rig that has not booted                                                      | confirm the address, retry after boot, and download the key again in case the rig was reflashed                                                                          |
-| the rig takes no address and answers nothing on the LAN           | the DHCP server was not up, leases only known hardware, or the link is dead                             | plug one USB-C cable into the rig and run `probetron shell --usb`, then read `networkctl status eth0` and `journalctl -b -u systemd-networkd` there                      |
-| the USB console itself never appears                             | the receptacle carries power alone, the port browns out, or the rig never reached userspace              | check that the cable carries data, feed 5 V into header pins 2 and 6 instead, and treat a silent gadget as a rig that is not booting                                     |
-| neither the LAN nor the USB console answers                       | the rig is not reaching userspace, or it flashed an image without the console layer                     | read `probetron-report.txt` on the card; an absent report means the boot stopped below userspace, and `config.txt` there must end with `dtoverlay=dwc2,dr_mode=peripheral` |
-| the endpoint prints but nothing connects                         | the forward never came up, or nothing listens behind it                                                 | the session ends by itself when the forward fails; otherwise check `--local-port` for a port already in use on the client                                                |
-| `the rig is busy with <command> (pid ...) since ...` (status 75) | another operation owns the target                                                                       | run `probetron status`, wait for that operation, or end it on the client that started it                                                                                 |
-| status 69 with a named missing resource                          | the rig image or the wiring lacks that resource                                                         | follow the repair in the diagnostic; every one of them names the resource and the fix                                                                                    |
-| an editor connects but has no source or symbols                  | the DAP request carries the wrong ELF, or the pinned probe-rs resolved it on the rig                    | check `programBinary` and `cwd` in the editor configuration, and re-read the DAP note under "Debug from an editor"                                                       |
+| Symptom                                                          | Cause                                                                                                     | Repair                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing SPI device /dev/spidev0.0`                              | SPI0 is off, or the rig booted an image without the hardware layer                                        | check `dtparam=spi=on` in `/boot/firmware/config.txt`, reboot, and confirm `ls -l /dev/spidev0.0` and the `0:0:/dev/spidev0.0` selector that `probetron info` prints                                                                |
+| `missing SWD SPI device /dev/spidev_swd*`                        | the udev rule that names the SWD bus is absent                                                            | reinstall the rig image, then confirm `ls -l /dev/spidev_swd0` points at `spidev0.0`; only that alias reaches DAP discovery                                                                                                         |
+| probe-rs finds no target, or reports an ARM DP error             | SWD wiring, the 1 kΩ orientation, ground, or the SWD clock                                                | check pins 23, 21, and 19 against the wiring table, confirm MISO taps the DUT side of the 1 kΩ resistor, add a ground return on pin 20, then retry, lowering `--speed-khz` when the debug port answers but the memory read does not |
+| `the reset of the target failed with gpioset exit ...`           | GPIO26 cannot drive RUN                                                                                   | check the wire from header pin 37 to RUN, check that nothing else claims GPIO26 with `gpioinfo`, and confirm `/dev/gpiochip0` exists                                                                                                |
+| firmware flashes but never starts                                | RUN is not wired, so only a verified download and no reset reached the DUT                                | wire pin 37 to RUN; `probetron reset` must restart the firmware on its own                                                                                                                                                          |
+| `missing UART device /dev/ttyAMA0`                               | UART0 is off, or the serial console still owns it                                                         | check `enable_uart=1` and `dtoverlay=disable-bt` in `config.txt`, confirm no `console=serial0` in `cmdline.txt`, and confirm `serial-getty@ttyAMA0` is masked                                                                       |
+| UART bytes are missing or garbled                                | the bit rate, the wire pairing, or a missing ground                                                       | match `--baud` to the firmware, cross TX and RX as the table shows, and share ground on pin 6                                                                                                                                       |
+| `missing DUT USB device /dev/probetron-dut`                      | the firmware exposes no CDC, the board sits in BOOTSEL, or a recorded topology in `manifest.edn` is stale | confirm the firmware enumerates, leave BOOTSEL, and re-run the USB topology check below if `manifest.edn` names a receptacle                                                                                                        |
+| `cannot find socat on this client`                               | the client has no socat, so `--pty` has no pseudo-terminal                                                | `brew install socat` or `apt install socat`; the session and its TCP endpoint keep working meanwhile                                                                                                                                |
+| `cannot fetch the rig key from http://<host>/probetron_key`      | the rig is unreachable, or the key service is down                                                        | ping the address, check the wired LAN and the DHCP reservation, and check `probetron-key.service` on the rig                                                                                                                        |
+| `the cached rig key ... has unsafe permissions`                  | something widened the cache file                                                                          | `chmod 600` that file or remove it; the next operation fetches the key again                                                                                                                                                        |
+| `the SSH connection to <host> failed` (status 255)               | the address, the LAN, or a rig that has not booted                                                        | confirm the address, retry after boot, and download the key again in case the rig was reflashed                                                                                                                                     |
+| the rig takes no address and answers nothing on the LAN          | the DHCP server was not up, leases only known hardware, or the link is dead                               | plug one USB-C cable into the rig and run `probetron shell --usb`, then read `networkctl status eth0` and `journalctl -b -u systemd-networkd` there                                                                                 |
+| the USB console itself never appears                             | the receptacle carries power alone, the port browns out, or the rig never reached userspace               | check that the cable carries data, feed 5 V into header pins 2 and 6 instead, and treat a silent gadget as a rig that is not booting                                                                                                |
+| neither the LAN nor the USB console answers                      | the rig is not reaching userspace, or it flashed an image without the console layer                       | read `probetron-report.txt` on the card; an absent report means the boot stopped below userspace, and `config.txt` there must end with `dtoverlay=dwc2,dr_mode=peripheral`                                                          |
+| the endpoint prints but nothing connects                         | the forward never came up, or nothing listens behind it                                                   | the session ends by itself when the forward fails; otherwise check `--local-port` for a port already in use on the client                                                                                                           |
+| `the rig is busy with <command> (pid ...) since ...` (status 75) | another operation owns the target                                                                         | run `probetron status`, wait for that operation, or end it on the client that started it                                                                                                                                            |
+| status 69 with a named missing resource                          | the rig image or the wiring lacks that resource                                                           | follow the repair in the diagnostic; every one of them names the resource and the fix                                                                                                                                               |
+| an editor connects but has no source or symbols                  | the DAP request carries the wrong ELF, or the pinned probe-rs resolved it on the rig                      | check `programBinary` and `cwd` in the editor configuration, and re-read the DAP note under "Debug from an editor"                                                                                                                  |
 
 ## Hardware qualification
 
@@ -879,40 +879,55 @@ It never builds an image, because that build wants a Debian 13 arm64 host, eleva
 A namespace that all three share, such as `operation` or `version`, sits at the root instead.
 A release archive carries every source file except `provisioning/`, because a client installs neither builder.
 
-| Path                                     | Contents                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------ |
-| `bin/probetron`                          | public client entry point                                          |
-| `bin/probetron-rig`                      | rig entry point that the client reaches over SSH                   |
-| `src/probetron/operation.clj`            | pure operation model, validators, and rig command construction     |
-| `src/probetron/frontend.clj`             | pure command-line dispatch that both entry points share            |
-| `src/probetron/version.clj`              | the release version that every role reports                        |
-| `src/probetron/client/cli.clj`           | pure parser of the public command line                             |
-| `src/probetron/client/command.clj`       | pure remote command, SSH argv, and key cache paths                 |
-| `src/probetron/client/report.clj`        | pure client information record and its two output forms            |
-| `src/probetron/rig/config.clj`           | pure parser of the rig-only SSH protocol                           |
-| `src/probetron/rig/lifecycle.clj`        | pure ownership model and appliance command lines                   |
-| `src/probetron/rig/hardware.clj`         | pure description of the fixed target slot and its command lines    |
-| `src/probetron/rig/elf.clj`              | pure validator of one uploaded firmware image                      |
-| `src/probetron/rig/information.clj`      | pure information record and its two output forms                   |
-| `src/probetron/client/main.clj`          | imperative shell of the client                                     |
-| `src/probetron/client/key.clj`           | imperative shell that refreshes the cached rig key                 |
-| `src/probetron/client/session.clj`       | imperative shell of the short client operations                    |
-| `src/probetron/client/tunnel.clj`        | imperative shell of the long client sessions                       |
-| `src/probetron/rig/main.clj`             | imperative shell of the rig                                        |
-| `src/probetron/rig/runner.clj`           | imperative shell that owns the target lock and the process groups  |
-| `src/probetron/rig/target.clj`           | imperative shell of `info`, `flash`, `erase`, and `reset`          |
-| `src/probetron/rig/session.clj`          | imperative shell of the locked `connect` and `debug` sessions      |
-| `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive    |
-| `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                  |
-| `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                    |
-| `image/manifest.edn`                         | every pinned archive and digest, save the probe-rs source          |
-| `vendor/probe-rs`                            | the patched probe-rs fork the image compiles, pinned as a submodule |
-| `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance               |
+| Path                                     | Contents                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `bin/probetron`                          | public client entry point                                           |
+| `bin/probetron-rig`                      | rig entry point that the client reaches over SSH                    |
+| `src/probetron/operation.clj`            | pure operation model, validators, and rig command construction      |
+| `src/probetron/frontend.clj`             | pure command-line dispatch that both entry points share             |
+| `src/probetron/version.clj`              | the release version that every role reports                         |
+| `src/probetron/client/cli.clj`           | pure parser of the public command line                              |
+| `src/probetron/client/command.clj`       | pure remote command, SSH argv, and key cache paths                  |
+| `src/probetron/client/report.clj`        | pure client information record and its two output forms             |
+| `src/probetron/rig/config.clj`           | pure parser of the rig-only SSH protocol                            |
+| `src/probetron/rig/lifecycle.clj`        | pure ownership model and appliance command lines                    |
+| `src/probetron/rig/hardware.clj`         | pure description of the fixed target slot and its command lines     |
+| `src/probetron/rig/elf.clj`              | pure validator of one uploaded firmware image                       |
+| `src/probetron/rig/information.clj`      | pure information record and its two output forms                    |
+| `src/probetron/client/main.clj`          | imperative shell of the client                                      |
+| `src/probetron/client/key.clj`           | imperative shell that refreshes the cached rig key                  |
+| `src/probetron/client/session.clj`       | imperative shell of the short client operations                     |
+| `src/probetron/client/tunnel.clj`        | imperative shell of the long client sessions                        |
+| `src/probetron/rig/main.clj`             | imperative shell of the rig                                         |
+| `src/probetron/rig/runner.clj`           | imperative shell that owns the target lock and the process groups   |
+| `src/probetron/rig/target.clj`           | imperative shell of `info`, `flash`, `erase`, and `reset`           |
+| `src/probetron/rig/session.clj`          | imperative shell of the locked `connect` and `debug` sessions       |
+| `src/probetron/dev.clj`                  | imperative shell of the development-only network code deploy        |
+| `src/probetron/provisioning/package.clj` | pure release plan and the shell that writes the release archive     |
+| `src/probetron/provisioning/archive.clj` | pure deterministic tar, gzip, and SHA-256 encoder                   |
+| `src/probetron/provisioning/image.clj`   | the rig image build driver that `bb image` runs                     |
+| `image/manifest.edn`                     | every pinned archive and digest, save the probe-rs source           |
+| `vendor/probe-rs`                        | the patched probe-rs fork the image compiles, pinned as a submodule |
+| `image/config/probetron.yaml`            | the one rpi-image-gen configuration of the appliance                |
 | `image/layer/`                           | the seven named appliance layers and their `.rootfs-overlay/` trees |
-| `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                |
-| `VERSION`                                | the release version, which `probetron.version` repeats             |
+| `test/probetron/`                        | `clojure.test` namespaces that the runner discovers                 |
+| `VERSION`                                | the release version, which `probetron.version` repeats              |
 
 Both entry points resolve their own symlinks, then load `../src` in a development checkout or `../lib` in an installation.
+
+### Deploy to a rig without reflashing
+
+The rig runs interpreted Babashka from `/usr/local/lib`, and every operation opens SSH and runs `probetron-rig` afresh, so a code change reaches a running rig without a rebuilt card.
+`bb rig-dev-deploy` tars the working-tree `src/` and extracts it into a tmpfs mounted over that directory, and the next operation runs it.
+
+```sh
+bb rig-dev-deploy --host probetron.lab   # or set PROBETRON_HOST
+bb rig-dev-reset  --host probetron.lab   # drop the overlay, restoring the image code
+```
+
+The deploy authenticates with the same cached key every public command uses, so a reachable rig needs no extra setup.
+The overlay lives on a tmpfs and writes nothing to the card, so a reboot restores the image's own code exactly as `rig-dev-reset` does.
+This is a development shortcut and not a release path: a shipped rig only ever runs the code its own image carries.
 
 ## Release packaging
 
