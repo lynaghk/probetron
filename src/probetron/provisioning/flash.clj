@@ -5,9 +5,11 @@
    platform gate so a build host that cannot flash fails before it lists one
    disk. `flash!` shows the removable disks as a lettered menu, and the letter
    you pick is the whole of the confirmation: only removable disks carry a
-   letter, and each one names its size and where it is mounted. Everything below
-   the entry points is either a pure reading of the diskutil report or the
-   imperative shell that owns diskutil, dd, and standard streams.
+   letter, and each one names its size and where it is mounted. A /dev path
+   argument, of the kind `bb disks` prints, names the disk instead and skips the
+   menu. Everything below the entry points is either a pure reading of the
+   diskutil report or the imperative shell that owns diskutil, dd, and standard
+   streams.
 
    The image travels to the raw device through `xz -dc | sudo dd`, so the write
    never lands a whole image in memory and never touches an internal disk."
@@ -19,7 +21,7 @@
             [probetron.operation :as op]))
 
 (declare usage enumerate! selectable internal order-disks pick letters menu!
-         resolve-image! verify-image! write! prompt-disk!
+         resolve-image! verify-image! write! prompt-disk! split-argv find-disk
          disk-records disk-record partition-mounts format-size human clock
          json! stream! sha-256-file fail! fatal
          uncompressed-size! copy-progress! progress-line
@@ -38,20 +40,33 @@
   "build/*.img.xz")
 
 (defn flash!
-  "Write a built image to a removable disk that the operator picks, and return an exit status."
+  "Write a built image to a removable disk, and return an exit status.
+
+   A /dev path argument, of the kind `bb disks` prints, names the disk to write
+   and skips the menu: the path is then the whole of the confirmation. With no
+   such argument the operator picks the disk from the lettered menu instead."
   [argv]
   (if (some #{"--help" "-h"} argv)
     (do (println (usage)) op/exit-ok)
     (try
       (platform!)
-      (let [image (resolve-image! (first argv))
+      (let [[named node] (split-argv argv)
+            image (resolve-image! named)
             disks (enumerate!)
             removable (order-disks (selectable disks))]
         (verify-image! image)
-        (menu! removable (internal disks))
-        (if-let [disk (prompt-disk! removable)]
-          (write! disk image)
-          (do (println "flash: cancelled, no disk written") op/exit-ok)))
+        (if node
+          (if-let [disk (find-disk node removable)]
+            (write! disk image)
+            (fail! (str node " is not a removable disk that flash may write"
+                        (when (find-disk node (internal disks))
+                          " (it is an internal disk, never written)")
+                        ": run 'bb disks' to list the removable disks")))
+          (do
+            (menu! removable (internal disks))
+            (if-let [disk (prompt-disk! removable)]
+              (write! disk image)
+              (do (println "flash: cancelled, no disk written") op/exit-ok)))))
       (catch clojure.lang.ExceptionInfo exception
         (fatal (ex-message exception) (:status (ex-data exception) op/exit-failure))))))
 
@@ -73,17 +88,32 @@
   []
   (str/join
    \newline
-   ["Usage: bb flash [image]     Write a built image to a removable disk you pick."
-    "       bb disks             List the disks this host can see."
+   ["Usage: bb flash [image] [disk]   Write a built image to a removable disk."
+    "       bb disks                  List the disks this host can see."
     ""
     "Runs on macOS alone and needs xz on the PATH."
     ""
     (str "The image defaults to the one " build-glob " that a build leaves,"
          " and a path argument names another.")
-    "flash lists the removable disks as a lettered menu, and the letter you pick"
-    "is the confirmation: only removable disks carry a letter."]))
+    "The disk is a /dev path that 'bb disks' prints, and naming it skips the menu."
+    "With no disk, flash lists the removable disks as a lettered menu, and the"
+    "letter you pick is the confirmation: only removable disks carry a letter."]))
 
 ;;; Pure reading of the diskutil report
+
+(defn split-argv
+  "Return [image disk] from a flash argv, telling a disk path from an image path.
+
+   A disk argument is one that `bb disks` prints, a /dev path; anything else
+   names an image. Either may be absent, and the two may come in either order."
+  [argv]
+  (let [disk? #(str/starts-with? % "/dev/")]
+    [(first (remove disk? argv)) (first (filter disk? argv))]))
+
+(defn find-disk
+  "Return the disk in a list that a /dev path names, or nil when none matches."
+  [node disks]
+  (first (filter #(= node (:node %)) disks)))
 
 (defn disk-records
   "Return one record for every whole disk in a diskutil report and its per-disk facts.
