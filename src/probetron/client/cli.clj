@@ -62,6 +62,7 @@
         chip-and-speed {:chip value :speed-khz value}]
     {:info {:host value :usb flag :speed-khz value :format value}
      :status {:host value :usb flag :format value}
+     :log {:host value :usb flag}
      :flash (merge {:host value :usb flag} chip-and-speed)
      :erase (merge {:host value :usb flag} chip-and-speed)
      :reset {:host value :usb flag}
@@ -82,6 +83,7 @@
   "The documented form of every public command."
   {:info "  probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]"
    :status "  probetron status  --host <host> [--format <text|edn>]"
+   :log "  probetron log     --host <host>"
    :flash "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] <elf>"
    :erase "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
    :reset "  probetron reset   --host <host>"

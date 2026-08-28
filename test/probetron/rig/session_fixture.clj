@@ -58,7 +58,8 @@
     (runner/runtime
      {:paths {:lock (path "target.lock")
               :active (path "active.edn")
-              :uploads (path "uploads")}
+              :uploads (path "uploads")
+              :dut-log (path "dut.log")}
       :executables {:probe-rs (path "probe-rs")
                     :gpioset (path "gpioset")
                     :socat (path "socat")}

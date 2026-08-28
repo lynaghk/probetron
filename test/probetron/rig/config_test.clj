@@ -40,7 +40,8 @@
   (is (= {:operation :info :format :edn :speed-khz 1000} (operation ["info" "--format" "edn"])))
   (is (= 50 (:speed-khz (operation ["info" "--speed-khz" "50"]))))
   (is (= {:operation :status :format :text} (operation ["status"])))
-  (is (str/includes? (usage-error ["status" "--format" "toml"]) "--format")))
+  (is (str/includes? (usage-error ["status" "--format" "toml"]) "--format"))
+  (is (= {:operation :log} (operation ["log"])) "the rig prints its DUT record"))
 
 (deftest rig-flash-reads-the-elf-from-standard-input
   (is (= {:operation :flash :chip "RP2350" :speed-khz 1000 :elf :stdin}

@@ -67,6 +67,8 @@
   (is (= {:operation :info :host "pi.lab" :format :text :speed-khz 1000} (operation ["info" "--host" "pi.lab"])))
   (is (= {:operation :status :host "10.0.0.7" :format :edn}
          (operation ["status" "--host" "10.0.0.7" "--format" "edn"])))
+  (is (= {:operation :log :host "pi.lab"} (operation ["log" "--host" "pi.lab"]))
+      "log fetches the DUT record the rig keeps")
   (is (str/includes? (usage-error ["info" "--host" "pi" "--format" "yaml"]) "--format"))
   (is (str/includes? (usage-error ["info" "--host" "pi.lab" "extra"]) "extra"))
   (testing "info clocks the SWD bus like every target command, so it shares --speed-khz"

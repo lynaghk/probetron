@@ -4,9 +4,9 @@
    It takes the nonblocking target lock, records the active command, runs the
    operation, and reaps every process group the operation started before it
    gives the lock back.
-   The runtime map carries the appliance paths and the filesystem, clock, and
-   process functions, so a test substitutes temporary paths, a fixture child,
-   and a recorded reset while production always takes the fixed absolute paths."
+   The runtime map carries the appliance paths and the filesystem and process
+   functions, so a test substitutes temporary paths, a fixture child, and a
+   recorded reset while production always takes the fixed absolute paths."
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.edn :as edn]
@@ -19,7 +19,7 @@
 
 (declare default-runtime default-paths default-executables default-filesystem default-hardware
          own-target! report-status! probe-lock acquire-lock! handshake! release-lock!
-         register-cleanup! watch-stdin!
+         register-cleanup! watch-stdin! log-event! report-log!
          session start-helper! clean-up! stop-groups! signal-group! await-exit! run-reset!
          write-active! read-owner! delete-active! write-atomically! glob-paths report-busy!
          fail! warn!)
@@ -45,14 +45,16 @@
                   ": the rig image creates it at boot, so reboot the rig or create it first"))
 
       (= :none (lifecycle/lock-mode operation))
-      (report-status! operation runtime)
+      (case (:operation operation)
+        :log (report-log! operation runtime)
+        (report-status! operation runtime))
 
       :else
       (own-target! operation runtime))))
 
 (defn own-target!
   "Own the target for one operation and clean up everything that operation started."
-  [operation {:keys [paths clock pid perform] :as runtime}]
+  [operation {:keys [paths pid perform] :as runtime}]
   (let [{:keys [lock holder exit]} (acquire-lock! runtime)]
     (case lock
       :busy (report-busy! runtime)
@@ -61,10 +63,14 @@
       :taken
       (let [state (atom {:holder holder
                          :groups []
+                         :operation (:operation operation)
+                         :channel (:channel operation)
                          :reset-on-exit? (true? (:reset-on-exit? operation))
                          :cleaned? false})]
         (try
-          (write-active! runtime (lifecycle/active-metadata operation (pid) (clock)))
+          (write-active! runtime (lifecycle/active-metadata operation (pid) (java.time.Instant/now)))
+          (log-event! runtime :session-start
+                      {:operation (:operation operation) :channel (:channel operation)})
           (register-cleanup! state runtime)
           (perform operation (session state runtime))
           (catch Exception exception
@@ -146,6 +152,8 @@
         (when (:reset-on-exit? before) (run-reset! runtime))
         (delete-active! runtime)
         (release-lock! (:holder before))
+        (log-event! runtime :session-end
+                    {:operation (:operation before) :channel (:channel before)})
         (finally (deliver mine true))))))
 
 (defn stop-groups!
@@ -180,6 +188,35 @@
     (reset-target! runtime)
     (catch Exception exception
       (warn! (str "the reset on exit failed: " (or (ex-message exception) (str exception)))))))
+
+(defn log-event!
+  "Append one timestamped event to the append-only DUT record, best-effort.
+
+   The record is a serialized history of every session the rig owned, so a DUT
+   re-enumeration in the kernel log lines up with the flash, reset, or connect
+   that caused it. It never fails the operation it records: a log the rig cannot
+   write is a lost line, not a lost session."
+  [{:keys [paths]} event fields]
+  (try
+    (let [file (fs/file (:dut-log paths))
+          entry (into {:at (java.util.Date.) :event event}
+                      (remove (comp nil? val) fields))]
+      (fs/create-dirs (fs/parent file))
+      (spit file (str (pr-str entry) "\n") :append true))
+    (catch Exception _ nil)))
+
+(defn report-log!
+  "Print the DUT record the rig keeps, or say it has none yet.
+
+   The record is what every owned session and the channel holder appended, so an
+   operator reads the history of one DUT — the sessions the rig ran and the USB
+   link that came and went under them — without an interactive login."
+  [_operation {:keys [paths filesystem]}]
+  (if-let [text (not-empty ((:read-file filesystem) (:dut-log paths)))]
+    (print text)
+    (println "no DUT events recorded yet"))
+  (flush)
+  op/exit-ok)
 
 (defn acquire-lock!
   "Take the target lock without waiting.
@@ -282,6 +319,7 @@
   "Every fixed rig path: the volatile state of one operation and the identity of the image."
   {:lock "/run/probetron/target.lock"
    :active "/run/probetron/active.edn"
+   :dut-log "/run/probetron/dut.log"
    :uploads hardware/upload-directory
    :os-release "/etc/os-release"
    :hostname "/etc/hostname"
@@ -314,12 +352,11 @@
    :delete-file! fs/delete-if-exists})
 
 (def default-runtime
-  "The production wiring of the clock, the current process, and subprocesses."
+  "The production wiring of the current process and subprocesses."
   {:paths default-paths
    :executables default-executables
    :filesystem default-filesystem
    :hardware default-hardware
-   :clock (fn [] (java.time.Instant/now))
    :pid (fn [] (.pid (java.lang.ProcessHandle/current)))
    :stdin (fn [] System/in)
    :spawn! process/process

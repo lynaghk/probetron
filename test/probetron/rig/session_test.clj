@@ -1,6 +1,7 @@
 (ns probetron.rig.session-test
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [probetron.rig.runner :as runner]
@@ -96,6 +97,37 @@
     (is (str/includes? err "probetron-dut"))
     (is (str/includes? err "USB"))
     (is (empty? calls) "a channel the rig cannot open starts no helper")))
+
+(defn dut-log-events
+  "Return the events the rig appended to its DUT record, oldest first."
+  [directory]
+  (let [file (fs/path directory "dut.log")]
+    (if (fs/exists? file)
+      (mapv edn/read-string (str/split-lines (slurp (fs/file file))))
+      [])))
+
+(deftest the-rig-records-every-session-it-owns-to-the-dut-log
+  (let [directory (temporary-directory)
+        calls (atom [])
+        runtime (fixture/appliance! directory calls {})
+        session (future (runner/execute! usb-operation runtime))]
+    (try
+      (is (some? (fixture/await-pid! directory "bridge")) "the session must run")
+      (fixture/release! directory)
+      (is (= op/exit-ok (deref session 15000 :timeout)))
+      (let [events (dut-log-events directory)]
+        (is (= [:session-start :session-end] (mapv :event events))
+            "the record brackets each owned session with a start and an end")
+        (is (= :connect (:operation (first events)))
+            "and names the operation, so a flash lines up with the re-enumeration it caused")
+        (is (= :usb (:channel (first events))))
+        (is (every? (comp inst? :at) events)
+            "every entry stamps when it happened as an instant"))
+      (finally
+        (fixture/release! directory)
+        (deref session 15000 :timeout)
+        (fixture/stop-all! directory)
+        (fs/delete-tree directory)))))
 
 (deftest a-missing-uart-device-names-itself-and-the-repair
   (let [{:keys [exit err calls]} (run-session! uart-operation {:remove ["ttyAMA0"]})]

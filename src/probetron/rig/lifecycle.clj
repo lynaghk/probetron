@@ -19,6 +19,7 @@
    hardware operation, and a :session operation holds it until the outer SSH
    command ends."
   {:status :none
+   :log :none
    :info :short
    :flash :short
    :erase :short

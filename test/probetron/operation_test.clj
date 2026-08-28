@@ -39,6 +39,8 @@
          (operation/rig-command {:operation :status :host "pi" :format :edn})))
   (is (= ["probetron-rig" "reset"]
          (operation/rig-command {:operation :reset :host "pi"})))
+  (is (= ["probetron-rig" "log"]
+         (operation/rig-command {:operation :log :host "pi"})))
   (is (= ["probetron-rig" "flash" "--chip" "RP2350" "--speed-khz" "1000"]
          (operation/rig-command flash-operation)))
   (is (= ["probetron-rig" "erase" "--chip" "RP2350" "--speed-khz" "4000"]

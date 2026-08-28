@@ -14,7 +14,7 @@
 
 (def commands
   "The commands that both front ends carry, in help order."
-  [:info :status :flash :erase :reset :connect :debug])
+  [:info :status :log :flash :erase :reset :connect :debug])
 
 (defn command-names
   "Return the command names of one front end, as a command line types them."

@@ -49,6 +49,11 @@
                [(op/unexpected-argument-error args)]
                (fn [_] {:operation :reset}))
 
+    :log
+    (op/finish [{} []]
+               [(op/unexpected-argument-error args)]
+               (fn [_] {:operation :log}))
+
     :connect
     (let [[values errors] (op/collect [:channel] context)
           channel (:channel values)
@@ -94,6 +99,7 @@
      :flash chip-and-speed
      :erase chip-and-speed
      :reset {}
+     :log {}
      :connect (merge {:channel value
                       :baud value
                       :usb-wait-seconds value
@@ -106,6 +112,7 @@
   "The documented form of every rig command."
   {:info "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
    :status "  probetron-rig status  [--format <text|edn>]"
+   :log "  probetron-rig log"
    :flash "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
    :erase "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
    :reset "  probetron-rig reset"

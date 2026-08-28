@@ -76,6 +76,7 @@
           :info (into (speed-args public) ["--format" (name format)])
           (:flash :erase) (chip-and-speed-args public)
           :reset []
+          :log []
           :connect (cond-> ["--channel" (name channel)]
                      (= :uart channel) (into ["--baud" (str baud)])
                      (= :usb channel) (into ["--usb-wait-seconds" (str usb-wait-seconds)])
@@ -215,6 +216,11 @@
     (finish (collect [:host] context)
             [(unexpected-argument-error args)]
             (fn [values] {:operation :reset :host (:host values)}))
+
+    :log
+    (finish (collect [:host] context)
+            [(unexpected-argument-error args)]
+            (fn [values] {:operation :log :host (:host values)}))
 
     :connect
     (let [[values errors] (collect [:host :channel :local-port] context)

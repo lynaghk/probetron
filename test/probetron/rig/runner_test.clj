@@ -159,7 +159,8 @@
   "Return the ownership paths inside a temporary directory."
   [directory]
   {:lock (str (fs/path directory "target.lock"))
-   :active (str (fs/path directory "active.edn"))})
+   :active (str (fs/path directory "active.edn"))
+   :dut-log (str (fs/path directory "dut.log"))})
 
 (defn rig-runtime
   "Return a runtime that owns a temporary target instead of the appliance one."
@@ -205,6 +206,28 @@
   (doseq [name ["helper.pid" "grandchild.pid"]]
     (when-let [pid (recorded-pid directory name)]
       (signal! "-KILL" pid))))
+
+(deftest the-log-operation-prints-the-dut-record
+  (let [directory (temporary-directory)]
+    (try
+      (spit (fs/file (:dut-log (paths directory)))
+            "{:at #inst \"2026-08-28T10:00:00Z\" :event :session-start :operation :flash}\n")
+      (let [out (StringWriter.)
+            exit (binding [*out* out] (runner/execute! {:operation :log} (rig-runtime directory {})))]
+        (is (= op/exit-ok exit))
+        (is (str/includes? (str out) ":event :session-start"))
+        (is (str/includes? (str out) ":operation :flash")
+            "so an operator reads the record without a login"))
+      (finally (fs/delete-tree directory)))))
+
+(deftest the-log-operation-says-when-the-record-is-empty
+  (let [directory (temporary-directory)]
+    (try
+      (let [out (StringWriter.)
+            exit (binding [*out* out] (runner/execute! {:operation :log} (rig-runtime directory {})))]
+        (is (= op/exit-ok exit))
+        (is (str/includes? (str out) "no DUT events")))
+      (finally (fs/delete-tree directory)))))
 
 (defn run-status!
   "Run the status operation against a temporary target and return what it wrote."
