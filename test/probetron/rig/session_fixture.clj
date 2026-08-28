@@ -161,18 +161,18 @@
 (defn helper-name
   "Name the appliance helper that one owned argv starts, or nil when it starts none.
 
-   Both socat children and both probe-rs children run the same executable, so an
-   address or a verb tells them apart: the holder mirrors the DUT to a
-   pseudo-terminal while the byte listener accepts on a TCP port, and the DAP
-   server names its verb where the RTT decoder attaches."
+   An address or a verb tells the same-executable children apart: the byte
+   listener accepts on a TCP port while the holder mirrors the DUT to a
+   pseudo-terminal, and the DAP server names its verb where the RTT decoder
+   attaches. The holder wraps socat in a reconnect loop, so its own name is
+   `sh`; the loopback link address names it all the same."
   [directory argv]
-  (when (< 1 (count argv))
-    (condp = (second argv)
-      (str (fs/path directory "socat"))
-      (if (some #(str/starts-with? % "TCP-LISTEN") argv) "bridge" "holder")
-      (str (fs/path directory "probe-rs"))
-      (if (= "dap-server" (nth argv 2 nil)) "dap" "rtt")
-      nil)))
+  (cond
+    (some #(str/starts-with? % "TCP-LISTEN") argv) "bridge"
+    (some #(str/starts-with? % "PTY,link=") argv) "holder"
+    (= (str (fs/path directory "probe-rs")) (second argv))
+    (if (= "dap-server" (nth argv 2 nil)) "dap" "rtt")
+    :else nil))
 
 (defn stand-in-command
   "Return the stand-in that replaces one owned helper.

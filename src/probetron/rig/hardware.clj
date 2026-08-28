@@ -140,18 +140,44 @@
   [device]
   (str spi-selector-prefix device))
 
-(defn channel-holder-command
-  "Return the argv that opens the DUT channel once and holds it live all session.
+(def holder-loop
+  "The shell that keeps the DUT mirror live across a DUT re-enumeration.
 
-   socat opens the DUT the moment the session starts and mirrors it to a
-   loopback pseudo-terminal, so the board settles one connection at the start of
-   the session and every byte client after that attaches to a channel that is
-   already live, exactly as a direct USB cable behaves. Holding the DUT open
-   keeps the board's own bytes waiting on the link until a client reads them,
-   and keeps the line asserted so a client attaching and leaving never makes the
-   board re-announce itself mid-session."
-  [{:keys [socat]} {:keys [dut-link]} address]
-  [socat address (str "PTY,link=" dut-link ",raw,echo=0")])
+   socat mirrors the DUT to the loopback link, and this loop starts it again
+   whenever it ends, exactly as a direct USB cable reconnects when the board
+   re-enumerates. The loop waits for the device path before each mirror, so a
+   reset or a re-enumeration that drops the DUT for a moment costs the channel a
+   moment, not the whole session, and the device path is the udev symlink, so a
+   DUT that returns under a new tty name is still the one the holder reopens.
+   Each mirror brackets the DUT record with a link-up and a link-lost event, so
+   a re-enumeration the rig did not cause leaves the same visible mark a flash
+   does.
+   $1 is socat, $2 the DUT device path, $3 the DUT address, $4 the loopback
+   link, $5 the DUT record."
+  (str/join " "
+            ["stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; };"
+             "while :; do"
+             "if [ -e \"$2\" ]; then"
+             "printf '{:at #inst \"%s\" :event :dut-link-up}\\n' \"$(stamp)\" >> \"$5\";"
+             "\"$1\" \"$3\" \"$4\";"
+             "printf '{:at #inst \"%s\" :event :dut-link-lost}\\n' \"$(stamp)\" >> \"$5\";"
+             "fi;"
+             "sleep 0.5;"
+             "done"]))
+
+(defn channel-holder-command
+  "Return the argv that holds the DUT channel live all session and reopens it if the DUT re-enumerates.
+
+   The holder mirrors the DUT to a loopback pseudo-terminal, so the board
+   settles one connection at the start of the session and every byte client
+   after that attaches to a channel that is already live, exactly as a direct
+   USB cable behaves. Holding the DUT open keeps the board's own bytes waiting
+   on the link until a client reads them; reopening it on a re-enumeration keeps
+   a reset or a brownout mid-session from bricking the channel until the client
+   reconnects, and records each link that comes and goes."
+  [{:keys [socat]} {:keys [dut-link]} device address dut-log]
+  ["sh" "-c" holder-loop "probetron-holder"
+   socat device address (str "PTY,link=" dut-link ",raw,echo=0") dut-log])
 
 (defn byte-service-command
   "Return the argv of the rig byte listener.

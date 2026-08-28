@@ -122,16 +122,21 @@
             (await-service! bridge :byte hardware (:stopping? session)))))))
 
 (defn start-holder!
-  "Open the DUT channel once and hold it live for the whole session.
+  "Hold the DUT channel live for the whole session and reopen it if the DUT re-enumerates.
 
    The holder settles the board at the start of the session and keeps the DUT
    bytes waiting on the loopback link, so a byte client attaches to a channel
-   that is already live rather than reopening the DUT itself. Cleanup owns it, so
-   it never outlives the session."
+   that is already live rather than reopening the DUT itself. A reset or a
+   re-enumeration that drops the DUT mid-session reopens the mirror rather than
+   ending it, exactly as a cable reconnects. Cleanup owns it, so it never
+   outlives the session."
   [operation {:keys [runtime start-helper!]}]
   (let [{:keys [executables hardware]} runtime]
     (start-helper! (hardware/channel-holder-command
-                    executables hardware (hardware/channel-address hardware operation))
+                    executables hardware
+                    (hardware/resource-path runtime (hardware/channel-resource (:channel operation)))
+                    (hardware/channel-address hardware operation)
+                    (get-in runtime [:paths :dut-log]))
                    helper-options)))
 
 (defn start-bridge!

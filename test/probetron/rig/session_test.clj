@@ -37,22 +37,31 @@
           (is (= {:out :inherit :err :inherit} opts))
           (is (not-any? #{"-" "STDIO" "STDIN"} argv)))))))
 
-(deftest the-holder-opens-the-dut-once-and-mirrors-it-to-a-live-link
+(defn holder-arg
+  "Return the holder argument that starts with one prefix."
+  [argv prefix]
+  (first (filter #(str/starts-with? % prefix) argv)))
+
+(deftest the-holder-mirrors-the-dut-to-a-live-link-and-reopens-it-on-a-re-enumeration
   (with-running-session! uart-operation {}
     (fn [{:keys [calls directory]}]
       (let [{:keys [argv opts]} (helper-call @calls "holder")]
-        (is (= [(socat directory)
-                (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b115200")
-                (str "PTY,link=" (device directory "dut") ",raw,echo=0")]
-               argv)
-            "the holder opens the DUT once and mirrors it to the loopback link")
+        (is (some #{(socat directory)} argv) "the holder runs socat")
+        (is (= (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b115200")
+               (holder-arg argv "FILE:"))
+            "and opens the DUT")
+        (is (= (str "PTY,link=" (device directory "dut") ",raw,echo=0")
+               (holder-arg argv "PTY,link="))
+            "and mirrors it to the loopback link")
+        (is (str/includes? (nth argv 2) "while")
+            "in a loop, so a DUT that re-enumerates mid-session reopens rather than ends")
         (is (= {:out :inherit :err :inherit} opts))))))
 
 (deftest the-uart-channel-takes-the-requested-baud
   (with-running-session! (assoc uart-operation :baud 921600) {}
     (fn [{:keys [calls directory]}]
       (is (= (str "FILE:" (device directory "ttyAMA0") ",raw,echo=0,o-noctty,b921600")
-             (second (:argv (helper-call @calls "holder"))))
+             (holder-arg (:argv (helper-call @calls "holder")) "FILE:"))
           "the holder that opens the DUT carries the requested baud"))))
 
 (deftest the-usb-channel-opens-the-stable-device-path-once-and-holds-it
@@ -61,9 +70,10 @@
       (let [holder (:argv (helper-call @calls "holder"))
             bridge (:argv (helper-call @calls "bridge"))]
         (is (= (str "FILE:" (device directory "probetron-dut") ",raw,echo=0,o-noctty")
-               (second holder))
-            "the holder opens the stable DUT path once for the whole session")
-        (is (str/starts-with? (last holder) "PTY,link=")
+               (holder-arg holder "FILE:"))
+            "the holder opens the stable DUT path for the whole session")
+        (is (= (str "PTY,link=" (device directory "dut") ",raw,echo=0")
+               (holder-arg holder "PTY,link="))
             "and mirrors it to a loopback link that clients share")
         (is (str/includes? (second bridge) "fork")
             "the listener still forks one child per accepted connection")
@@ -82,7 +92,7 @@
           (is (some? (fixture/await-pid! directory "holder"))
               "the holder opens the DUT once it enumerates")
           (is (= (str "FILE:" appearing ",raw,echo=0,o-noctty")
-                 (second (:argv (helper-call @calls "holder")))))
+                 (holder-arg (:argv (helper-call @calls "holder")) "FILE:")))
           (fixture/release! directory)
           (is (= op/exit-ok (deref exit 15000 :timeout)))))
       (finally (fixture/stop-all! directory) (fs/delete-tree directory)))))
