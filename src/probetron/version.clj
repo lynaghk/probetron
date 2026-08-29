@@ -85,6 +85,10 @@
 (defn git
   "Return the trimmed output of one git command in a directory, or nil when it fails."
   [root & argv]
-  (let [{:keys [exit out]} @(process/process (into ["git" "-C" root] argv)
-                                             {:out :string :err :string})]
+  ;; A dev overlay runs a raw checkout on a rig image that carries no git binary
+  ;; so a missing git reads as a failed command, not a crash, and the stamp
+  ;; falls back to an unknown commit.
+  (let [{:keys [exit out]} (try @(process/process (into ["git" "-C" root] argv)
+                                                  {:out :string :err :string})
+                                (catch java.io.IOException _ {:exit 1}))]
     (when (zero? exit) (str/trim out))))
