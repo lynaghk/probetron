@@ -76,6 +76,24 @@
                (last (recorded-argv client))))
         (is (not-any? #(str/includes? % (str (fs/file-name elf))) (recorded-argv client)))))))
 
+(deftest flash-sends-the-client-terminal-size-so-the-rig-sizes-the-progress-bars
+  (with-client! {}
+    (fn [client]
+      (let [elf (elf-file client)]
+        (run-client! (assoc client :terminal-size! (constantly {:cols 132 :rows 43}))
+                     {:operation :flash :host "pi.lab" :chip "RP235x" :speed-khz 4000 :elf elf})
+        (is (= (str "sudo -n /usr/local/sbin/probetron-rig flash --chip RP235x --speed-khz 4000"
+                    " --terminal-cols 132 --terminal-rows 43")
+               (last (recorded-argv client))))))))
+
+(deftest a-client-without-a-terminal-asks-for-no-progress-bars
+  (with-client! {}
+    (fn [client]
+      (run-client! client {:operation :erase :host "pi.lab" :chip "RP235x" :speed-khz 2000})
+      (is (= "sudo -n /usr/local/sbin/probetron-rig erase --chip RP235x --speed-khz 2000"
+             (last (recorded-argv client)))
+          "output that goes to a file must carry no terminal-shaped bars"))))
+
 (deftest a-relayed-operation-frames-the-rig-output-with-its-command-and-outcome
   (with-client! {}
     (fn [client]
@@ -240,14 +258,15 @@
         err     (StringWriter.)
         calls   (atom [])
         runtime (session/runtime
-                 {:env         {"XDG_CACHE_HOME" (:home client)}
-                  :fetch!      (:fetch! client)
-                  :executables {:ssh (:ssh client)}
-                  :run!        (fn [argv opts]
-                                 (let [result @(process/process argv (merge {:throw false} opts
-                                                                            {:out :string :err :string}))]
-                                   (swap! calls conj {:argv (vec argv) :opts opts :result result})
-                                   result))})
+                 {:env            {"XDG_CACHE_HOME" (:home client)}
+                  :fetch!         (:fetch! client)
+                  :terminal-size! (or (:terminal-size! client) (constantly nil))
+                  :executables    {:ssh (:ssh client)}
+                  :run!           (fn [argv opts]
+                                    (let [result @(process/process argv (merge {:throw false} opts
+                                                                               {:out :string :err :string}))]
+                                      (swap! calls conj {:argv (vec argv) :opts opts :result result})
+                                      result))})
         exit    (binding [*out* out *err* err] (session/execute! operation runtime))]
     {:exit exit :out (str out) :err (str err) :calls calls}))
 
@@ -261,14 +280,15 @@
         err     (StringWriter.)
         calls   (atom [])
         runtime (session/runtime
-                 {:env         {"XDG_CACHE_HOME" (:home client)}
-                  :fetch!      (:fetch! client)
-                  :executables {:ssh (:ssh client)}
-                  :run!        (fn [argv opts]
-                                 (let [result @(process/process argv (merge {:throw false} opts
-                                                                            {:in "" :out :string :err :string}))]
-                                   (swap! calls conj {:argv (vec argv) :opts opts :result result})
-                                   result))})
+                 {:env            {"XDG_CACHE_HOME" (:home client)}
+                  :fetch!         (:fetch! client)
+                  :terminal-size! (or (:terminal-size! client) (constantly nil))
+                  :executables    {:ssh (:ssh client)}
+                  :run!           (fn [argv opts]
+                                    (let [result @(process/process argv (merge {:throw false} opts
+                                                                               {:in "" :out :string :err :string}))]
+                                      (swap! calls conj {:argv (vec argv) :opts opts :result result})
+                                      result))})
         exit    (binding [*out* out *err* err] (shell/open! operation runtime))]
     {:exit exit :out (str out) :err (str err) :calls calls}))
 

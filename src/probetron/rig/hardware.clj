@@ -18,10 +18,6 @@
 ;; script comes from bsdutils, an Essential package, so the image always carries it.
 (def script-executable "/usr/bin/script")
 
-;; The size to give the forwarded pseudo-terminal, since it otherwise defaults to zero.
-(def pty-rows 24)
-(def pty-cols 80)
-
 ;; The one target slot, wired as the README table describes.
 (def spi-device "/dev/spidev0.0")
 (def spi-selector-prefix "0:0:")
@@ -98,10 +94,11 @@
    probe-rs draws its erase, program, and verify progress bars only when its
    output is a terminal, but the rig streams that output down a plain SSH pipe,
    so probe-rs would otherwise write nothing until the whole download finished.
-   `script` gives probe-rs a pseudo-terminal, so the bars reach the client
-   frame by frame across the roughly forty-five seconds the download takes."
-  [executables hardware {:keys [chip speed-khz path]}]
-  (with-pty (:script executables)
+   A pseudo-terminal sized like the client terminal brings the bars to the
+   client frame by frame across the roughly forty-five seconds a download takes,
+   and a client without a terminal keeps the plain pipe and gets no bars."
+  [executables hardware {:keys [chip speed-khz path terminal]}]
+  (with-pty (:script executables) terminal
     (conj (probe-command executables hardware "download" {:chip chip :speed-khz speed-khz})
           "--verify" path)))
 
@@ -186,10 +183,10 @@
   "Return the argv that erases the whole target once and shows its progress.
 
    probe-rs draws an erase progress bar the same way it draws the download bars,
-   so erase runs under `script` too and its bar reaches the client rather than
-   nothing until the erase finishes."
-  [executables hardware {:keys [chip speed-khz]}]
-  (with-pty (:script executables)
+   so erase runs under the same sized pseudo-terminal and its bar reaches the
+   client rather than nothing until the erase finishes."
+  [executables hardware {:keys [chip speed-khz terminal]}]
+  (with-pty (:script executables) terminal
     (probe-command executables hardware "erase" {:chip chip :speed-khz speed-khz})))
 
 (defn probe-command
@@ -200,7 +197,7 @@
     speed-khz (into ["--speed" (str speed-khz)])))
 
 (defn with-pty
-  "Wrap one command so it runs under a pseudo-terminal that forwards its output.
+  "Wrap one command so it runs under a pseudo-terminal sized like the client terminal.
 
    `script` runs the command with a pseudo-terminal for its standard output and
    error, copies every byte the command writes to script's own standard output,
@@ -208,15 +205,29 @@
    banner, and the /dev/null typescript discards the second copy script keeps.
    A program that prints only for a terminal therefore prints down a pipe too.
 
-   The client reaches the rig without a terminal, so `script` cannot copy a size
-   onto the new pseudo-terminal and it opens at zero rows and columns, at which
-   probe-rs draws its bars but breaks the line between one finished bar and the
-   next. `stty` sizes the pseudo-terminal before probe-rs starts, so every bar
-   lands on its own line, and a semicolon keeps probe-rs's own exit status."
-  [script argv]
-  (let [sized (str "stty rows " pty-rows " cols " pty-cols "; "
-                   (str/join " " (map shell-quote argv)))]
-    [script "-q" "-e" "-c" sized "/dev/null"]))
+   probe-rs draws its bars through indicatif, which writes no newline between
+   its lines: it pads every line with spaces to the width of its own terminal
+   and relies on that terminal wrapping at exactly that column. The bytes then
+   travel down the SSH pipe untouched to the terminal of the client, which
+   wraps at its own width, so the pseudo-terminal must carry exactly the size
+   of the client terminal or every bar smears onto one line. `stty` sets that
+   size before the command starts, and a semicolon keeps the command's own
+   exit status under -e.
+
+   indicatif also hides every bar when TERM is unset or names a dumb terminal.
+   The SSH command session of the client carries no TERM at all, and the bars
+   appear anyway because sudo env_reset sets TERM=unknown on the way to the rig
+   entry point, so bars drawn here depend on the rig command staying behind sudo.
+
+   Without a client terminal there is no width to match, so the command runs
+   bare, keeps the plain pipe, and draws no bars, which is exactly right for
+   output that a client sends on to a file."
+  [script terminal argv]
+  (if-let [{:keys [rows cols]} terminal]
+    (let [sized (str "stty rows " rows " cols " cols "; "
+                     (str/join " " (map shell-quote argv)))]
+      [script "-q" "-e" "-c" sized "/dev/null"])
+    argv))
 
 (defn shell-quote
   "Quote one token so the shell that -c starts reads it as exactly one word."

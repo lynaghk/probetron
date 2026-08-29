@@ -74,8 +74,8 @@
     (is (str/includes? out "no debug probe found"))))
 
 (deftest flash-verifies-the-download-and-then-pulses-the-reset-line
-  (let [image                 (elf)
-        uploaded              (atom nil)
+  (let [image            (elf)
+        uploaded         (atom nil)
         {:keys [exit calls directory uploads]}
         (with-rig! flash-operation
           {:stdin     image
@@ -83,12 +83,11 @@
                         (when (= :download (command-name argv))
                           (reset! uploaded (fs/read-all-bytes (last (probe-argv argv)))))
                         {:exit 0})})
-        [download-call reset] calls
-        download              (probe-argv download-call)]
+        [download reset] calls]
     (is (= op/exit-ok exit))
     (is (= 2 (count calls)) "flash downloads once and resets once")
-    (is (= "script" (fs/file-name (first download-call)))
-        "flash runs probe-rs under a pseudo-terminal so its progress reaches the client")
+    (is (= (probe-rs directory) (first download))
+        "a client without a terminal gets no pseudo-terminal and therefore no bars")
     (is (= [(probe-rs directory) "download" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
             "--chip" "RP235x" "--speed" "4000" "--verify"]
            (vec (butlast download))))
@@ -152,17 +151,42 @@
     (is (empty? calls) "a broken upload never reaches probe-rs")
     (is (empty? uploads) "and the volatile file goes with it")))
 
+(deftest flash-draws-its-progress-on-a-pseudo-terminal-sized-like-the-client-terminal
+  (let [{:keys [exit calls directory]}
+        (with-rig! (assoc flash-operation :terminal {:cols 120 :rows 40})
+          {:stdin (elf)})
+        download                       (first calls)]
+    (is (= op/exit-ok exit))
+    (is (= "script" (fs/file-name (first download)))
+        "the pseudo-terminal is what makes probe-rs draw its bars down the SSH pipe")
+    (is (= ["-q" "-e" "-c"] (subvec download 1 4)))
+    (is (= "/dev/null" (last download)) "the typescript copy is discarded")
+    (is (str/starts-with? (nth download 4) "stty rows 40 cols 120; ")
+        "the bars render correctly only at exactly the size of the client terminal")
+    (is (= [(probe-rs directory) "download" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
+            "--chip" "RP235x" "--speed" "4000" "--verify"]
+           (vec (butlast (probe-argv download)))))))
+
 (deftest erase-delegates-once-to-probe-rs
   (let [{:keys [exit calls directory]}
         (with-rig! {:operation :erase :chip "RP235x" :speed-khz 1000}
           {:responses (by-command {:erase {:exit 3 :err "Error: erase failed"}})})]
     (is (= 3 exit) "the rig gives back the status probe-rs returned")
-    (is (= "script" (fs/file-name (ffirst calls)))
-        "erase runs probe-rs under a pseudo-terminal so its progress reaches the client")
     (is (= [[(probe-rs directory) "erase" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
              "--chip" "RP235x" "--speed" "1000"]]
-           (mapv probe-argv calls))
+           calls)
         "a failed erase must not run a second destructive attempt")))
+
+(deftest erase-draws-its-progress-on-a-pseudo-terminal-sized-like-the-client-terminal
+  (let [{:keys [calls directory]}
+        (with-rig! {:operation :erase :chip "RP235x" :speed-khz 1000 :terminal {:cols 80 :rows 24}}
+          {})
+        erase                     (first calls)]
+    (is (= "script" (fs/file-name (first erase))))
+    (is (str/starts-with? (nth erase 4) "stty rows 24 cols 80; "))
+    (is (= [[(probe-rs directory) "erase" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
+             "--chip" "RP235x" "--speed" "1000"]]
+           (mapv probe-argv calls)))))
 
 (deftest reset-pulses-the-run-line-low-and-releases-it
   (let [{:keys [exit calls directory]} (with-rig! {:operation :reset} {})]

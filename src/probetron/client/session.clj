@@ -20,7 +20,8 @@
 
 (declare invoke! relay! report-outcome! report-transport-failure! report-information!
          report-text! report-edn! report-unreadable! announce-waiting! rig-information
-         upload environment default-runtime default-executables default-filesystem
+         upload with-terminal progress-operations terminal-size!
+         environment default-runtime default-executables default-filesystem
          write-key! reserve-port! make-link-directory! fail! warn!)
 
 (def transport-failure
@@ -34,7 +35,23 @@
     (cond
       error (fail! error)
       (= :info (:operation operation)) (report-information! operation path runtime)
-      :else (relay! operation path runtime))))
+      :else (relay! (with-terminal operation runtime) path runtime))))
+
+(defn with-terminal
+  "Attach the client terminal size to an operation that draws progress bars on it.
+
+   The rig sizes the probe-rs pseudo-terminal to exactly this size, because the
+   bars render correctly only on a terminal of the width they were drawn for.
+   A client without a terminal sends no size, and the rig then runs probe-rs
+   down a plain pipe with no bars at all."
+  [operation {:keys [terminal-size!]}]
+  (if-let [terminal (and (progress-operations (:operation operation)) (terminal-size!))]
+    (assoc operation :terminal terminal)
+    operation))
+
+(def progress-operations
+  "The relayed operations whose probe-rs progress bars draw on the client terminal."
+  #{:flash :erase})
 
 (defn relay!
   "Announce the rig command, relay its output untouched, and name the outcome.
@@ -189,12 +206,33 @@
   {:executables            default-executables
    :filesystem             default-filesystem
    :fetch!                 rig-key/http-fetch!
+   :terminal-size!         #'terminal-size!
    :which                  (fn [program] (some-> (fs/which program) str))
    :reserve-port!          #'reserve-port!
    :make-link-directory!   #'make-link-directory!
    :delete-link-directory! fs/delete-tree
    :run!                   (fn [argv opts] @(process/process argv (merge {:throw false} opts)))
    :spawn!                 process/process})
+
+(defn terminal-size!
+  "Return the {:cols columns :rows rows} of the client terminal, or nil without one.
+
+   test -t 1 asks about the standard output the shell inherits from the client,
+   so a client whose output goes to a file or a pipe reports no terminal.
+   stty then reads the size of the controlling terminal and answers over
+   standard error, because standard output must stay inherited for that test.
+   A size outside what the rig accepts reads as no terminal at all, so a
+   strange stty answer costs the bars and never the operation."
+  []
+  (let [{:keys [exit err]} @(process/process ["sh" "-c" "test -t 1 && stty size < /dev/tty >&2"]
+                                             {:throw false :out :inherit :err :string})
+        [rows cols]        (when (zero? exit)
+                             (map parse-long (str/split (str/trim (str err)) #"\s+")))
+        accepted?          (fn [dimension] (and dimension
+                                                (<= op/min-terminal-dimension
+                                                    dimension
+                                                    op/max-terminal-dimension)))]
+    (when (and (accepted? rows) (accepted? cols)) {:cols cols :rows rows})))
 
 (defn reserve-port!
   "Return a free ephemeral port on the client loopback.

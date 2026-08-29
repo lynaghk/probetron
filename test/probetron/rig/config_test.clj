@@ -51,6 +51,26 @@
     (is (str/includes? (usage-error ["flash" "--chip" "RP2350" "firmware.elf"]) "firmware.elf")))
   (is (str/includes? (usage-error ["flash"]) "--chip")))
 
+(deftest rig-flash-and-erase-size-the-progress-terminal
+  (testing "a client with a terminal sends its size so the bars render at that width"
+    (is (= {:cols 120 :rows 40}
+           (:terminal (operation ["flash" "--chip" "RP2350"
+                                  "--terminal-cols" "120" "--terminal-rows" "40"]))))
+    (is (= {:cols 80 :rows 24}
+           (:terminal (operation ["erase" "--chip" "RP2350"
+                                  "--terminal-cols" "80" "--terminal-rows" "24"])))))
+  (testing "a client without a terminal sends no size and gets no pseudo-terminal"
+    (is (nil? (:terminal (operation ["flash" "--chip" "RP2350"])))))
+  (testing "one dimension alone is refused"
+    (is (str/includes? (usage-error ["flash" "--chip" "RP2350" "--terminal-cols" "120"])
+                       "--terminal-rows"))
+    (is (str/includes? (usage-error ["erase" "--chip" "RP2350" "--terminal-rows" "24"])
+                       "--terminal-cols")))
+  (testing "a dimension outside the accepted range is refused"
+    (is (str/includes? (usage-error ["flash" "--chip" "RP2350"
+                                     "--terminal-cols" "0" "--terminal-rows" "24"])
+                       "--terminal-cols"))))
+
 (deftest rig-erase-and-reset
   (is (= {:operation :erase :chip "RP2350" :speed-khz 1000} (operation ["erase" "--chip" "RP2350"])))
   (is (= {:operation :reset} (operation ["reset"])))

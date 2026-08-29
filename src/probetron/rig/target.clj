@@ -55,7 +55,7 @@
 
    The upload validates before probe-rs opens the target, and the RUN line
    pulses only after probe-rs verified what it wrote."
-  [{:keys [chip speed-khz]} {:keys [executables hardware run!] :as runtime}]
+  [{:keys [chip speed-khz terminal]} {:keys [executables hardware run!] :as runtime}]
   (or (missing-status runtime [:probe-rs :spi-device :gpioset :gpio-chip])
       (with-upload!
         (upload-path runtime)
@@ -64,7 +64,7 @@
             (refuse! error)
             (let [exit (:exit (run! (hardware/download-command
                                      executables hardware
-                                     {:chip chip :speed-khz speed-khz :path path})
+                                     {:chip chip :speed-khz speed-khz :terminal terminal :path path})
                                     {}))]
               (if (zero? exit)
                 (pulse-reset! runtime)
@@ -72,10 +72,10 @@
 
 (defn erase!
   "Erase the target once and give back exactly the status probe-rs returned."
-  [{:keys [chip speed-khz]} {:keys [executables hardware run!] :as runtime}]
+  [{:keys [chip speed-khz terminal]} {:keys [executables hardware run!] :as runtime}]
   (or (missing-status runtime [:probe-rs :spi-device])
       (:exit (run! (hardware/erase-command executables hardware
-                                           {:chip chip :speed-khz speed-khz})
+                                           {:chip chip :speed-khz speed-khz :terminal terminal})
                    {}))))
 
 (defn pulse-reset!

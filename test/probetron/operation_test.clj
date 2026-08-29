@@ -46,6 +46,16 @@
   (is (= ["probetron-rig" "erase" "--chip" "RP2350" "--speed-khz" "4000"]
          (operation/rig-command {:operation :erase :host "pi" :chip "RP2350" :speed-khz 4000}))))
 
+(deftest rig-command-carries-the-client-terminal-size
+  (testing "flash and erase name the client terminal so the rig sizes the progress bars"
+    (is (= ["probetron-rig" "flash" "--chip" "RP2350" "--speed-khz" "1000"
+            "--terminal-cols" "120" "--terminal-rows" "40"]
+           (operation/rig-command (assoc flash-operation :terminal {:cols 120 :rows 40}))))
+    (is (= ["probetron-rig" "erase" "--chip" "RP2350" "--speed-khz" "4000"
+            "--terminal-cols" "80" "--terminal-rows" "24"]
+           (operation/rig-command {:operation :erase :host     "pi"                :chip "RP2350"
+                                   :speed-khz 4000   :terminal {:cols 80 :rows 24}})))))
+
 (deftest rig-command-of-long-operations
   (testing "the client keeps its own transport options out of the rig command"
     (is (= ["probetron-rig" "connect" "--channel" "usb" "--usb-wait-seconds" "10"]
@@ -72,6 +82,7 @@
 
 (deftest rig-commands-parse-on-the-rig
   (doseq [public [flash-operation
+                  (assoc flash-operation :terminal {:cols 120 :rows 40})
                   connect-operation
                   (assoc connect-operation :rtt {:elf "app.elf" :chip "RP2350" :speed-khz 2000})
                   {:operation :erase :host "pi" :chip "RP2350" :speed-khz 4000}

@@ -10,7 +10,8 @@
 (declare build-command usb-error connect-fields connect-option-errors fields resolve-field
          parse-host parse-chip
          parse-speed-khz parse-baud parse-usb-wait-seconds parse-local-port parse-channel
-         parse-format parse-integer ok invalid hostname? ipv4-literal? ipv6-literal?)
+         parse-format parse-terminal-dimension parse-integer ok invalid
+         hostname? ipv4-literal? ipv6-literal?)
 
 ;; Exit statuses of both entry points.
 (def exit-ok 0)
@@ -30,6 +31,8 @@
 (def max-usb-wait-seconds 60)
 (def min-local-port 1024)
 (def max-local-port 65535)
+(def min-terminal-dimension 1)
+(def max-terminal-dimension 1000)
 (def max-elf-bytes (* 64 1024 1024))
 
 (def usb-console-address
@@ -64,6 +67,17 @@
   [{:keys [chip] :as attach}]
   (into ["--chip" chip] (speed-args attach)))
 
+(defn terminal-args
+  "Return the --terminal-cols and --terminal-rows tokens of one client terminal.
+
+   The rig sizes the pseudo-terminal behind the probe-rs progress bars to
+   exactly this size, because the bars render correctly only on a terminal of
+   the width they were drawn for. A client without a terminal sends no size."
+  [{:keys [terminal]}]
+  (if-let [{:keys [cols rows]} terminal]
+    ["--terminal-cols" (str cols) "--terminal-rows" (str rows)]
+    []))
+
 (defn rig-command
   "Return the argv that runs a public operation on the rig.
 
@@ -74,7 +88,7 @@
         (case operation
           :status ["--format" (name format)]
           :info (into (speed-args public) ["--format" (name format)])
-          (:flash :erase) (chip-and-speed-args public)
+          (:flash :erase) (into (chip-and-speed-args public) (terminal-args public))
           :reset []
           :log []
           :connect (cond-> ["--channel" (name channel)]
@@ -296,6 +310,8 @@
    :usb-wait-seconds {:flag  "--usb-wait-seconds"     :label   "<seconds>"              :env-var "PROBETRON_USB_WAIT_SECONDS"
                       :parse #'parse-usb-wait-seconds :default default-usb-wait-seconds}
    :local-port       {:flag "--local-port" :label "<port>" :parse #'parse-local-port}
+   :terminal-cols    {:flag "--terminal-cols" :label "<columns>" :parse #'parse-terminal-dimension}
+   :terminal-rows    {:flag "--terminal-rows" :label "<rows>" :parse #'parse-terminal-dimension}
    :channel          {:flag "--channel" :label "<usb|uart>" :parse #'parse-channel :required? true}
    :format           {:flag "--format" :label "<text|edn>" :parse #'parse-format :default :text}})
 
@@ -353,6 +369,11 @@
   "Accept an unprivileged TCP port on the client."
   [value]
   (parse-integer value min-local-port max-local-port))
+
+(defn parse-terminal-dimension
+  "Accept one dimension of the client terminal in character cells."
+  [value]
+  (parse-integer value min-terminal-dimension max-terminal-dimension))
 
 (defn parse-channel
   "Accept the byte channel that carries DUT traffic."

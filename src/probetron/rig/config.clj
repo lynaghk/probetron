@@ -8,7 +8,8 @@
             [probetron.rig.lifecycle :as lifecycle]
             [probetron.operation :as op]))
 
-(declare front-end build refused-option client-only-options command-specs command-usage help-text)
+(declare front-end build refused-option client-only-options command-specs command-usage help-text
+         terminal-fields terminal terminal-pair-error)
 
 (def program-name lifecycle/program-name)
 
@@ -37,12 +38,14 @@
                              :format    (:format values)}))
 
     (:flash :erase)
-    (op/finish (op/collect op/chip-and-speed-fields context)
-               [(op/unexpected-argument-error args)]
+    (op/finish (op/collect (into op/chip-and-speed-fields terminal-fields) context)
+               [(op/unexpected-argument-error args)
+                (terminal-pair-error opts)]
                (fn [values] (cond-> {:operation command
                                      :chip      (:chip values)
                                      :speed-khz (:speed-khz values)}
-                              (= :flash command) (assoc :elf :stdin))))
+                              (= :flash command) (assoc :elf :stdin)
+                              (terminal values) (assoc :terminal (terminal values)))))
 
     :reset
     (op/finish [{} []]
@@ -78,6 +81,23 @@
                [(op/unexpected-argument-error args)]
                (fn [_] {:operation :debug :reset-on-exit? (true? (:reset-on-exit opts))}))))
 
+(def terminal-fields
+  "The options that size the pseudo-terminal behind the probe-rs progress bars."
+  [:terminal-cols :terminal-rows])
+
+(defn terminal
+  "Return the client terminal size of one parse, or nil when the client sent none."
+  [{:keys [terminal-cols terminal-rows]}]
+  (when (and terminal-cols terminal-rows)
+    {:cols terminal-cols :rows terminal-rows}))
+
+(defn terminal-pair-error
+  "Explain a terminal size that names only one of its dimensions, or return nil."
+  [opts]
+  (when (not= (contains? opts :terminal-cols) (contains? opts :terminal-rows))
+    (str "invalid terminal size: pass --terminal-cols <columns> and --terminal-rows <rows>"
+         " together or not at all")))
+
 (defn refused-option
   "Explain a client-only option that stops at the rig boundary, or return nil."
   [option]
@@ -93,11 +113,12 @@
   "The options that each rig command accepts."
   (let [value          frontend/value-option
         flag           frontend/flag-option
-        chip-and-speed {:chip value :speed-khz value}]
+        chip-and-speed {:chip value :speed-khz value}
+        flash-or-erase (merge chip-and-speed {:terminal-cols value :terminal-rows value})]
     {:info    {:speed-khz value :format value}
      :status  {:format value}
-     :flash   chip-and-speed
-     :erase   chip-and-speed
+     :flash   flash-or-erase
+     :erase   flash-or-erase
      :reset   {}
      :log     {}
      :connect (merge {:channel          value
@@ -113,8 +134,10 @@
   {:info    "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
    :status  "  probetron-rig status  [--format <text|edn>]"
    :log     "  probetron-rig log"
-   :flash   "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
-   :erase   "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
+   :flash   (str "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
+                 " [--terminal-cols <columns> --terminal-rows <rows>]")
+   :erase   (str "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
+                 " [--terminal-cols <columns> --terminal-rows <rows>]")
    :reset   "  probetron-rig reset"
    :connect (str "  probetron-rig connect --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--rtt --chip <chip> [--speed-khz <speed>]]"
