@@ -1,0 +1,47 @@
+PROBETRON SYSTEM ARCHITECTURE
+=============================
+
+Build host                    Raspberry Pi 4B rig                 Target
+------------                  --------------------                 ------
+bb package                    +-------------------------------+
+bb image ------------------->| access: LAN or USB-C console   |
+       writes SD card         |         SSH + key service       |
+                              |               |                 |
+Lab client                    |       probetron-rig             |
+-----------                   |       target lock               |
+probetron CLI                 |       active operation           |
+     |                        |               |                 |
+     | SSH remote command     |       +-------+-------+          |
+     | ELF over stdin ------->|       |               |          |
+     |                        |  short operations   sessions    |
+     | SSH forward            |  info/flash/erase/  connect      |
+     |----------------------->|  reset              debug       |
+     |                        |       |               |          |
+     |                        |       |       +-------+-------+  |
+     |                        |       |       |               |  |
+     |                        |       |   socat :5555     DAP  |
+     |                        |       |   byte service    :50000|
+     |                        |       |       |               |  |
+     |                        |       |       +-------+-------+  |
+     |                        |       |               |          |
+     |                        |   /dev/spidev0.0  probe-rs      |
+     |                        |       SWD             | RTT       |
+     |                        |   GPIO26 reset       | decoder    |
+     |                        |   /dev/ttyAMA0 UART  |            |
+     |                        |   /dev/probetron-dut USB CDC     |
+     |                        +---------------|-----------------+
+                                             |
+                                      +------+------+
+                                      | ARM SWD DUT |
+                                      |             |
+                                      | SWD + RUN   |
+                                      | UART or USB |
+                                      +-------------+
+
+Transport and ownership
+-----------------------
+LAN and USB-C console reach the rig's SSH access layer.
+The client forwards only the loopback service for a long session.
+The rig owns the target lock for the full lifetime of that session.
+Client disconnect releases the rig helpers and the lock.
+The DUT USB cable is separate from the rig USB-C console cable.

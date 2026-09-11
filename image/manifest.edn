@@ -40,7 +40,7 @@
  ;; probe-rs is built from source, not downloaded. The image compiles the
  ;; vendored fork at vendor/probe-rs, a submodule whose commit — pinned by this
  ;; superproject's gitlink rather than by this file — is the exact source. The
- ;; fork carries an RP2350 SWD reset-and-halt fix that the stock 0.32.0 release
+ ;; fork carries an SWD reset-and-halt fix that the stock 0.32.0 release
  ;; lacks; once that fix ships upstream, drop the submodule and re-pin a stock
  ;; release URL and checksum here.
  :probe-rs

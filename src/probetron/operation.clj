@@ -2,7 +2,7 @@
   "Pure operation model that the public client and the rig entry point share.
 
    An operation is an explicit map such as
-   {:operation :flash :host \"pi\" :chip \"RP2350\" :speed-khz 1000 :elf \"firmware.elf\"}.
+   {:operation :flash :host \"pi\" :chip \"target-chip\" :speed-khz 1000 :elf \"firmware.elf\"}.
    Nothing here touches the filesystem, the network, or the hardware."
   (:require [babashka.cli :as cli]
             [clojure.string :as str]))
@@ -348,7 +348,7 @@
   [value]
   (if (re-matches #"[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}" value)
     (ok value)
-    (invalid "expected a probe-rs chip name such as RP2350")))
+    (invalid "expected a probe-rs chip name")))
 
 (defn parse-speed-khz
   "Accept an SWD clock in kilohertz."

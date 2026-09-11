@@ -19,7 +19,7 @@
   "Return the help of the whole public command."
   []
   (str/join "\n"
-            (concat ["Probetron gives lab clients network access to one RP2350 target on a Raspberry Pi."
+            (concat ["Probetron gives lab clients network access to one ARM SWD target on a Raspberry Pi."
                      ""
                      "Usage:"]
                     (frontend/usage-lines front-end)

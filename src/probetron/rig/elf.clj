@@ -2,7 +2,7 @@
   "Pure validator of one uploaded firmware image.
 
    It reads only the ELF32 little-endian structures that decide whether
-   probe-rs can flash the image on an RP2350, and it names the first structure
+   probe-rs can flash the image on the target, and it names the first structure
    it refuses.
    Every offset is a long, so no declared size can overflow into a range that
    looks like it fits.")
@@ -26,7 +26,7 @@
 (def program-type-load 1)
 
 (defn error
-  "Return why an upload is not a flashable RP2350 ELF, or nil when it is one."
+  "Return why an upload is not a flashable target ELF, or nil when it is one."
   [data]
   (let [size (alength ^bytes data)]
     (if (< size header-size)
@@ -40,7 +40,7 @@
           (load-segment-error data size)))))
 
 (defn header-error
-  "Return why the ELF32 header does not describe an RP2350 image, or nil."
+  "Return why the ELF32 header does not describe an ARM or RISC-V image, or nil."
   [data]
   (let [machine  (u16 data 18)
         declared (u16 data 40)]
@@ -87,7 +87,7 @@
                  (range (u16 data 44))))))
 
 (def machines
-  "The machine values of the two RP2350 cores."
+  "The machine values accepted by the target ELF validator."
   #{machine-arm machine-riscv})
 
 (defn u8

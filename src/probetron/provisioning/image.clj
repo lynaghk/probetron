@@ -418,7 +418,7 @@
   "Compile the probe-rs CLI from the vendored fork and return its staged path.
 
    The image builds probe-rs from vendor/probe-rs rather than fetching a binary,
-   because the fork carries an RP2350 SWD reset-and-halt fix that no stock release
+   because the fork carries an SWD reset-and-halt fix that no stock release
    ships yet. Building on the pinned Debian host links the binary against the base
    image's own GLIBC, and the release profile strips it so it stays as small as a
    published one. A warm cargo cache makes a repeat build cheap."

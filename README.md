@@ -1,18 +1,18 @@
 # Probetron
 
-Probetron turns one Raspberry Pi 4B into a network appliance for one physically connected RP2350 device under test.
+Probetron turns one Raspberry Pi 4B into a network appliance for one physically connected ARM SWD device under test.
 Lab clients on macOS and Linux flash firmware, erase or reset the target, debug it over DAP, read RTT logs, and bridge the DUT serial channel without an interactive login shell on the Pi.
 One USB-C cable carries a console of its own, so a rig that the lab network cannot reach is still diagnosed by hand.
 
-The project stays project-agnostic, so a rig serves whatever RP2350 board is wired to it.
-The first target is a piezo-driver setup where a Pico 2 W is the RP2350 DUT, but nothing here knows that.
+The project stays project-agnostic, so a rig serves whatever ARM SWD board is wired to it.
+The first documented target is a piezo-driver setup with a Pico 2 W DUT, but the system does not require that board.
 
 ## What an installation needs
 
 | Part       | Requirement                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------------- |
 | rig        | one Raspberry Pi 4B, one SD card of 4 GB or more, wired Ethernet, and a 5 V supply                      |
-| target     | one RP2350 board with SWCLK, SWDIO, RUN, and ground reachable                                           |
+| target     | one ARM SWD board with SWCLK, SWDIO, RUN, and ground reachable                                            |
 | client     | macOS or Linux with `bb` (Babashka) and `ssh`, plus `socat` for `--pty` and `curl` for the raw SSH path |
 | build host | a Debian 13 arm64 machine, and only when somebody builds the rig image                                  |
 
@@ -20,7 +20,7 @@ The Pi drives SWD directly over its own SPI0 bus, so the installation needs no s
 
 ## Quickstart
 
-One path from nothing to firmware output, with a Pico 2 W as the DUT and a rig that answers to `probetron`.
+One path from nothing to firmware output, with an ARM SWD DUT and a rig that answers to `probetron`.
 Each step names the section that explains it.
 
 **1. Build the image and write the card.**
@@ -36,7 +36,7 @@ xz -dc probetron-rpi4.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progr
 sync
 ```
 
-**2. Wire the Pico 2 W and boot the rig.**
+**2. Wire the DUT and boot the rig.**
 See [Wire the target](#wire-the-target), and read the resistor note there before you solder.
 
 ```text
@@ -59,7 +59,7 @@ mkdir -p ~/.local/probetron ~/.local/bin
 tar -xzf build/probetron-0.1.0.tar.gz -C ~/.local/probetron
 ln -sf ~/.local/probetron/bin/probetron ~/.local/bin/probetron
 export PROBETRON_HOST=probetron
-export PROBETRON_CHIP=RP2350
+export PROBETRON_CHIP=YOUR_CHIP_NAME
 ```
 
 **4. Prove the link.**
@@ -69,7 +69,7 @@ probetron info
 ```
 
 The `target:` block must show a debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`.
-probe-rs reads the debug port over SWD but names the exact part only for some families, so the block identifies an RP2350 by name yet identifies many other chips by vendor and core alone.
+probe-rs reads the debug port over SWD but names the exact part only for some families, so the block may identify the DUT by name or by vendor and core.
 A target that reads as absent is most often the resistor orientation of step 2, or an SWD clock too fast for the wiring, which `--speed-khz` lowers.
 
 **5. Build a hello world.**
@@ -164,7 +164,7 @@ Two references cover every Raspberry Pi board: the [Pico-series documentation](h
 
 ### Raspberry Pi Pico 2 W
 
-The wireless antenna owns the bottom edge, so the RP2350 debug port moves to three pads in the middle of the board rather than the edge where a plain Pico 2 carries it.
+The wireless antenna owns the bottom edge, so the debug port moves to three pads in the middle of the board rather than the edge where a plain Pico 2 carries it.
 Hold the board with the USB connector at the top, and the three pads read **SWCLK, GND, SWDIO** from left to right; the square pad is SWCLK.
 RUN is not on those pads: it is pin 30 on the right side of the 40-pin header, the third pin up from the bottom-right corner.
 A bare Pico 2 W ships those three pads unpopulated, so a breakout board that already presents them as pins saves you the soldering.
@@ -266,7 +266,7 @@ Target-specific values also come from ordinary environment variables, and an exp
 | Variable                     | Default for          | Value  | Accepted range                                  |
 | ---------------------------- | -------------------- | ------ | ----------------------------------------------- |
 | `PROBETRON_HOST`             | `--host`             | —      | a DNS name, an IPv4 literal, or an IPv6 literal |
-| `PROBETRON_CHIP`             | `--chip`             | —      | a probe-rs chip name such as `RP2350`           |
+| `PROBETRON_CHIP`             | `--chip`             | —      | the probe-rs name of the DUT chip              |
 | `PROBETRON_SPEED_KHZ`        | `--speed-khz`        | 1000   | 1 to 50000 kHz                                  |
 | `PROBETRON_UART_BAUD`        | `--baud`             | 115200 | 50 to 4000000 bit/s                             |
 | `PROBETRON_USB_WAIT_SECONDS` | `--usb-wait-seconds` | 10     | 0 to 60 seconds                                 |
@@ -275,10 +275,10 @@ A bench session usually exports the two values that never change and then names 
 
 ```sh
 export PROBETRON_HOST=probetron.lab
-export PROBETRON_CHIP=RP2350
+export PROBETRON_CHIP=YOUR_CHIP_NAME
 ```
 
-`--chip` is the name that the pinned probe-rs knows, which `probe-rs chip list | grep -i rp2` prints on the rig, and hardware qualification records the exact spelling for RP2350.
+`--chip` is the name that the pinned probe-rs knows, which `probe-rs chip list` prints on the rig, and hardware qualification records the exact spelling for the DUT.
 `--speed-khz` is the SWD clock, and 1 MHz is the default, which is the speed the pinned probe-rs already uses for its Linux SPI-SWD probe and which reaches a target over ordinary jumper wiring on a wide range of chips; a qualification run raises it to the fastest speed one rig holds, or lowers it for wiring that 1 MHz cannot reach.
 `info` clocks the bus at this speed too, so a target that auto-detection cannot pin still reads reliably.
 
@@ -334,7 +334,7 @@ active since: 2026-08-25T11:23:28.036818843Z
 `flash` uploads one ELF file, downloads it through probe-rs with verification, and starts the firmware by pulsing RUN.
 
 ```sh
-probetron flash --host probetron.lab --chip RP2350 \
+probetron flash --host probetron.lab --chip <chip> \
   firmware/target/thumbv8m.main-none-eabihf/release/piezo-driver
 ```
 
@@ -347,7 +347,7 @@ Only a verified download pulses RUN, so a failed flash leaves the target where i
 `erase` delegates once to probe-rs and gives back exactly what probe-rs said, with no second destructive attempt.
 
 ```sh
-probetron erase --host probetron.lab --chip RP2350
+probetron erase --host probetron.lab --chip <chip>
 ```
 
 ### reset
@@ -472,7 +472,7 @@ The probe-rs editor integration connects to an already-running DAP server when t
       "name": "Probetron: flash and debug",
       "server": "127.0.0.1:45678",
       "cwd": "${workspaceFolder}",
-      "chip": "RP2350",
+      "chip": "your-probe-rs-chip-name",
       "probe": "0:0:/dev/spidev_swd0",
       "wireProtocol": "Swd",
       "speed": 1000,
@@ -491,7 +491,7 @@ The probe-rs editor integration connects to an already-running DAP server when t
       "name": "Probetron: attach to running firmware",
       "server": "127.0.0.1:45678",
       "cwd": "${workspaceFolder}",
-      "chip": "RP2350",
+      "chip": "your-probe-rs-chip-name",
       "probe": "0:0:/dev/spidev_swd0",
       "wireProtocol": "Swd",
       "speed": 1000,
@@ -539,7 +539,7 @@ ssh -i <cache> -T \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP2350 --speed-khz 20'
+  probetron@<host> 'sudo -n /usr/local/sbin/probetron-rig flash --chip <chip> --speed-khz 20'
 ```
 
 Both known-host files are `/dev/null`, and the log level drops the new-host and changed-host warnings that this provokes, while every SSH error and all remote stderr still reach the client.
@@ -581,7 +581,7 @@ probetron-rig debug   [--reset-on-exit]
 ssh -i /tmp/probetron_key -T -o BatchMode=yes -o IdentitiesOnly=yes \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR \
-  probetron@probetron.lab 'sudo -n /usr/local/sbin/probetron-rig flash --chip RP2350 --speed-khz 20' \
+  probetron@probetron.lab 'sudo -n /usr/local/sbin/probetron-rig flash --chip <chip> --speed-khz 20' \
   < firmware.elf
 ```
 
@@ -678,6 +678,12 @@ There is no setup wizard and no first-boot expansion: `probetron info --host <ho
 
 ## Rig design reference
 
+The [architecture overview](docs/architecture.md) includes Mermaid, Graphviz, SVG, and plain-text versions of the system diagram.
+
+Use the SVG in newsletters, Mermaid in Markdown that supports it, and the plain-text version in terminal or plain-text email.
+
+![Probetron system architecture](docs/architecture.svg)
+
 ### Target ownership
 
 `/usr/bin/flock` takes `/run/probetron/target.lock` without waiting and holds it through a `/bin/cat` that lives exactly as long as the operation, so the lock also disappears when the rig dies.
@@ -713,9 +719,9 @@ The rig commands are equally fixed.
 
 ```text
 probe-rs info     --probe 0:0:/dev/spidev0.0 --protocol swd --speed 20 --verbose
-probe-rs download --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20 --verify <upload>
-probe-rs erase    --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20
-probe-rs attach   --probe 0:0:/dev/spidev0.0 --protocol swd --chip RP2350 --speed 20 <upload>
+probe-rs download --probe 0:0:/dev/spidev0.0 --protocol swd --chip <chip> --speed 20 --verify <upload>
+probe-rs erase    --probe 0:0:/dev/spidev0.0 --protocol swd --chip <chip> --speed 20
+probe-rs attach   --probe 0:0:/dev/spidev0.0 --protocol swd --chip <chip> --speed 20 <upload>
 probe-rs dap-server --port 50000 --ip 127.0.0.1
 gpioset --chip /dev/gpiochip0 --hold-period 100ms 26=0
 socat TCP-LISTEN:5555,bind=127.0.0.1,reuseaddr,fork,max-children=1 FILE:/dev/ttyAMA0,raw,echo=0,o-noctty,b115200
@@ -760,7 +766,7 @@ A missing SPI device, GPIO chip, UART, USB device, or executable stops the opera
 The build spends nothing before it knows it can finish: the platform gate, the Rust toolchain check, the pinned checkout, and rpi-image-gen's own validation all run before one byte is fetched, one key is generated, or one image is constructed.
 The staging step then verifies every pinned archive against its digest before use and compiles probe-rs from the pinned submodule, so a mirror that answers with something else stops the build rather than the appliance.
 
-probe-rs is built from the `vendor/probe-rs` fork, which carries an RP2350 SWD reset-and-halt fix that no stock 0.32.0 release ships; move back to a stock release pin in `manifest.edn` once that fix is upstream.
+probe-rs is built from the `vendor/probe-rs` fork, which carries an SWD reset-and-halt fix that no stock 0.32.0 release ships; move back to a stock release pin in `manifest.edn` once that fix is upstream.
 
 ## Security model
 
@@ -818,14 +824,14 @@ Every `ssh probetron@<host>` command below is the raw SSH path of the previous s
 When a measurement differs from what this document or `image/manifest.edn` states, change the pin or the documentation.
 A discrepancy that hides behind runtime inventory is a defect, because the rig deliberately owns no inventory.
 
-1. **Identify the target.** Wire SWD as the table above says, then run `probetron info --host <host>`. The `target:` block must show the debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`. Record the exact chip name that `ssh probetron@<host> 'probe-rs chip list' | grep -i rp2` prints, and correct every `--chip RP2350` example here if it differs.
-2. **Prove the link at the default speed.** `probetron info` reads the bus at 1 MHz, so run one write as well: `probetron flash --host <host> --chip RP2350 --speed-khz 1000 blinky.elf`. It must verify and start the firmware.
+1. **Identify the target.** Wire SWD as the table above says, then run `probetron info --host <host>`. The `target:` block must show the debug port and its components, and the `probe:` line must read `0:0:/dev/spidev0.0 swd`. Record the exact chip name that `ssh probetron@<host> 'probe-rs chip list'` prints, and use that name in every `--chip` example.
+2. **Prove the link at the default speed.** `probetron info` reads the bus at 1 MHz, so run one write as well: `probetron flash --host <host> --chip <chip> --speed-khz 1000 blinky.elf`. It must verify and start the firmware.
 3. **Step through the candidate speeds.** Run the same flash five times at each of 20, 100, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000, and 24000 kHz, and stop at the first speed that fails once.
 
    ```sh
    for speed in 20 100 250 500 1000 2000 4000 8000 12000 16000 24000; do
      for attempt in 1 2 3 4 5; do
-       probetron flash --host <host> --chip RP2350 --speed-khz "$speed" blinky.elf ||
+       probetron flash --host <host> --chip <chip> --speed-khz "$speed" blinky.elf ||
          { echo "FAILED at $speed" ; break 2 ; }
      done
    done

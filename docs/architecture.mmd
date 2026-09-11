@@ -1,0 +1,54 @@
+flowchart TB
+    build["Build host\nDebian arm64"]
+    image["Pinned rig image\nSD card"]
+    build -->|bb package / bb image| image
+    image -->|boot| rig
+
+    client["Lab client\nmacOS or Linux\nprobetron CLI"]
+    lan["Lab LAN\nSSH + key HTTP"]
+    usb["USB-C console\nUSB Ethernet\n192.168.99.1"]
+
+    subgraph rig["Raspberry Pi 4B rig"]
+        access["Access layer\nprobetron-key.service\nsshd"]
+        runner["probetron-rig\nrunner + target lock\nactive operation + DUT log"]
+        byte["Byte service\nsocat\n127.0.0.1:5555"]
+        dap["DAP service\nprobe-rs\n127.0.0.1:50000"]
+        rtt["RTT decoder\nprobe-rs"]
+        access --> runner
+        runner -->|connect| byte
+        runner -->|debug| dap
+        runner -->|optional --rtt| rtt
+    end
+
+    client --> lan
+    client --> usb
+    lan --> access
+    usb --> access
+    client -->|SSH remote command\nELF over stdin| runner
+    client -->|SSH local forward| byte
+    client -->|SSH local forward| dap
+
+    subgraph hw["Fixed target slot"]
+        swd["SPI0 SWD\n/dev/spidev0.0"]
+        reset["RUN reset\nGPIO26 / gpioset"]
+        uart["UART0\n/dev/ttyAMA0"]
+        dutusb["USB CDC\n/dev/probetron-dut"]
+        dut["ARM SWD DUT"]
+        swd --> dut
+        reset --> dut
+        uart --> dut
+        dutusb --> dut
+    end
+
+    runner -->|info / flash / erase / reset| swd
+    runner --> reset
+    byte -->|channel usb or uart| dutusb
+    byte -->|channel uart| uart
+    rtt -->|SWD reads| swd
+
+    classDef transport fill:#e8f1fb,stroke:#3973ac,color:#102a43
+    classDef runtime fill:#eaf6ee,stroke:#39845a,color:#153b24
+    classDef hardware fill:#fff3dc,stroke:#b7791f,color:#4a2c0a
+    class client,lan,usb transport
+    class access,runner,byte,dap,rtt runtime
+    class swd,reset,uart,dutusb,dut hardware

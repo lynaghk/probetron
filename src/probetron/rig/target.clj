@@ -141,10 +141,10 @@
   (str "the upload is larger than the " limit "-byte ELF limit: flash a smaller ELF file"))
 
 (defn elf-refusal
-  "Return why the bytes at path are not a flashable RP2350 ELF, or nil."
+  "Return why the bytes at path are not a flashable target ELF, or nil."
   [path]
   (when-let [reason (elf/error (fs/read-all-bytes path))]
-    (str "the upload is not a flashable RP2350 ELF file: " reason)))
+    (str "the upload is not a flashable target ELF file: " reason)))
 
 (defn with-upload!
   "Run the body that owns one upload and remove the upload on every exit path.
