@@ -22,6 +22,7 @@
 
 ;; Defaults and bounds of the target-specific values.
 (def default-speed-khz 1000)
+(def default-ram-speed-khz 12000)
 (def min-speed-khz 1)
 (def max-speed-khz 50000)
 (def default-baud 115200)
@@ -89,6 +90,8 @@
           :status ["--format" (name format)]
           :info (into (speed-args public) ["--format" (name format)])
           (:flash :erase) (into (chip-and-speed-args public) (terminal-args public))
+          (:run :run-ram) (cond-> (chip-and-speed-args public)
+                            reset-on-exit? (conj "--reset-on-exit"))
           :reset []
           :log []
           :connect (cond-> ["--channel" (name channel)]
@@ -102,11 +105,11 @@
 (defn stdin-elf
   "Return the client path of the ELF file an operation sends to the rig, or nil.
 
-   A flash sends the firmware it downloads and a connect session sends the ELF
-   that decodes RTT, and both travel over standard input rather than as a path."
+   Flash and run send the firmware they load, and connect sends its RTT ELF.
+   Every ELF travels over standard input rather than as a path."
   [{:keys [operation elf rtt]}]
   (case operation
-    :flash elf
+    (:flash :run :run-ram) elf
     :connect (:elf rtt)
     nil))
 
@@ -180,7 +183,7 @@
   [command {:keys [opts] :as context}]
   (if-let [error (usb-error opts)]
     {:errors [error]}
-    (build-command command (cond-> context
+    (build-command command (cond-> (assoc context :command command)
                              (:usb opts) (assoc-in [:opts :host] usb-console-address)))))
 
 (defn usb-error
@@ -206,17 +209,18 @@
                           :speed-khz (:speed-khz values)
                           :format    (:format values)}))
 
-    :flash
+    (:flash :run :run-ram)
     (let [elf (first args)]
       (finish (collect (into [:host] chip-and-speed-fields) context)
-              (into [(when-not elf "missing argument: pass the path of the ELF file to flash")
+              (into [(when-not elf (str "missing argument: pass the path of the ELF file to " (name command)))
                      (unexpected-argument-error (rest args))]
                     (when elf (elf-errors elf (elf-facts elf))))
-              (fn [values] {:operation :flash
-                            :host      (:host values)
-                            :chip      (:chip values)
-                            :speed-khz (:speed-khz values)
-                            :elf       elf})))
+              (fn [values] (cond-> {:operation command
+                                    :host      (:host values)
+                                    :chip      (:chip values)
+                                    :speed-khz (:speed-khz values)
+                                    :elf       elf}
+                             (#{:run :run-ram} command) (assoc :reset-on-exit? (true? (:reset-on-exit opts)))))))
 
     :erase
     (finish (collect (into [:host] chip-and-speed-fields) context)
@@ -317,7 +321,7 @@
 
 (defn resolve-field
   "Resolve one field from the explicit option, the environment, and the default."
-  [field {:keys [opts env use-env?]}]
+  [field {:keys [opts env use-env? command]}]
   (let [{:keys [flag env-var parse default required?]} (get fields field)
         explicit                                       (get opts field)
         from-environment                               (when (and use-env? env-var) (get env env-var))
@@ -328,7 +332,9 @@
                     (if (contains? result :value)
                       result
                       {:error (str "invalid " source " " (pr-str raw) ": " (:error result))}))
-      (some? default) {:value default}
+      (some? default) {:value (if (and (= field :speed-khz) (= command :run-ram))
+                                default-ram-speed-khz
+                                default)}
       required? {:error (str "missing " flag ": pass " flag " " (:label (get fields field))
                              (when (and use-env? env-var) (str " or set " env-var)))}
       :else {})))

@@ -102,6 +102,12 @@
     (conj (probe-command executables hardware "download" {:chip chip :speed-khz speed-khz})
           "--verify" path)))
 
+(defn run-command
+  "Load and verify an ELF, start it from flash or RAM, and stream RTT output."
+  [executables hardware {:keys [chip speed-khz path]}]
+  (conj (probe-command executables hardware "run" {:chip chip :speed-khz speed-khz})
+        "--verify" path))
+
 (defn rtt-command
   "Return the argv that decodes RTT of the firmware the target already runs.
 

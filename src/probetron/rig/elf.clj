@@ -7,7 +7,7 @@
    Every offset is a long, so no declared size can overflow into a range that
    looks like it fits.")
 
-(declare header-error table-error load-segment-error machines u8 u16 u32)
+(declare header-error table-error load-segment-error machines sram-range? u8 u16 u32)
 
 (def header-size
   "The ELF32 header size that the specification defines."
@@ -38,6 +38,32 @@
           (table-error "section header" (u32 data 32) (u16 data 48) (u16 data 46)
                        section-entry-size size)
           (load-segment-error data size)))))
+
+(defn ram-error
+  "Refuse images outside the ARM architectural SRAM window before loading."
+  [data]
+  (or (error data)
+      (when-not (= machine-arm (u16 data 18))
+        "run-ram currently supports ARM SRAM images only")
+      (when-not (sram-range? (u32 data 24) 1)
+        "run-ram requires an entry point in ARM SRAM (0x20000000..0x40000000)")
+      (let [offset  (u32 data 28)
+            entries (filter #(= program-type-load (u32 data %))
+                            (map #(+ offset (* % program-entry-size)) (range (u16 data 44))))]
+        (if-not (some #(pos? (u32 data (+ % 16))) entries)
+          "run-ram requires at least one file-backed LOAD segment"
+          (first (keep (fn [entry]
+                         (let [address (u32 data (+ entry 12))
+                               length  (max (u32 data (+ entry 16)) (u32 data (+ entry 20)))]
+                           (when (and (pos? length) (not (sram-range? address length)))
+                             (str "run-ram refuses a LOAD segment outside ARM SRAM at "
+                                  (format "0x%08x" address)))))
+                       entries))))))
+
+(defn sram-range?
+  "Tell whether a nonempty range lies in the ARM architectural SRAM window."
+  [address length]
+  (and (<= 0x20000000 address) (pos? length) (<= (+ address length) 0x40000000)))
 
 (defn header-error
   "Return why the ELF32 header does not describe an ARM or RISC-V image, or nil."

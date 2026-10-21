@@ -1,11 +1,10 @@
 (ns probetron.rig.session
-  "Imperative shell of the locked byte, RTT, and DAP sessions.
+  "Imperative shell of the locked byte, RTT, DAP, and firmware-run sessions.
 
-   connect and debug already own the target lock when they run, so each one
-   publishes its service on Pi loopback alone and holds the target until the
-   outer SSH command ends: connect opens the DUT byte channel and decodes RTT
-   beside it when the client asked for it, while debug serves the probe-rs DAP
-   protocol across one DAP client after another.
+   Connect opens the DUT byte channel and optionally decodes RTT beside it.
+   Debug serves DAP across successive debugger clients.
+   Run loads an ELF and monitors its RTT output.
+   Every session owns the target lock until the outer SSH command ends.
    Every device, executable, and volatile path arrives in the runtime, so a
    test substitutes a temporary appliance for the fixed one."
   (:require [probetron.rig.hardware :as hardware]
@@ -13,13 +12,13 @@
             [probetron.rig.target :as target]
             [probetron.operation :as op]))
 
-(declare connect! debug! required-resources with-rtt-upload! bridge! watch-dut-link! start-bridge!
+(declare connect! debug! run-image! required-resources with-rtt-upload! bridge! watch-dut-link! start-bridge!
          start-decoder! start-server! swd-device announce-probe! channel-status! await-device!
          await-service! services helper-options)
 
 (def operations
   "The long sessions that this shell carries out."
-  #{:connect :debug})
+  #{:connect :debug :run :run-ram})
 
 (def device-poll-ms
   "How often the session looks for the DUT USB device while it waits for it."
@@ -30,7 +29,8 @@
   [operation session]
   (case (:operation operation)
     :connect (connect! operation session)
-    :debug (debug! operation session)))
+    :debug (debug! operation session)
+    (:run :run-ram) (run-image! operation session)))
 
 (defn connect!
   "Bridge the DUT byte channel, decode the optional RTT beside it, and hold the target.
@@ -43,6 +43,28 @@
         (if rtt
           (with-rtt-upload! operation runtime #(bridge! operation session %))
           (bridge! operation session nil)))))
+
+(defn run-image!
+  "Load an uploaded ELF and hold its RTT monitor until the client leaves.
+
+   The ELF's load addresses select flash or RAM; RAM images need no RUN pulse."
+  [operation {:keys [runtime start-helper! watch-client! stopping?]}]
+  (or (target/missing-status runtime [:probe-rs :spi-device])
+      (target/with-upload!
+        (target/upload-path runtime)
+        (fn [path]
+          (if-let [error (or (target/receive-session-elf! runtime path)
+                             (when (= :run-ram (:operation operation))
+                               (target/ram-elf-refusal path)))]
+            (target/refuse! error)
+            (do
+              (watch-client!)
+              (let [{:keys [executables hardware]} runtime
+                    helper                         (start-helper! (hardware/run-command executables hardware
+                                                                                        (assoc operation :path path))
+                                                                  helper-options)
+                    exit                           (.waitFor ^Process (:proc helper))]
+                (if (stopping?) op/exit-ok exit))))))))
 
 (defn debug!
   "Serve the DAP protocol on Pi loopback and hold the target across every client of it.
@@ -90,7 +112,8 @@
   (case operation
     :connect (cond-> [:socat]
                rtt (into [:probe-rs :spi-device]))
-    :debug [:probe-rs]))
+    :debug [:probe-rs]
+    (:run :run-ram) [:probe-rs :spi-device]))
 
 (defn with-rtt-upload!
   "Receive and validate the bounded RTT ELF, then run the body that owns it.

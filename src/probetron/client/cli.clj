@@ -37,7 +37,8 @@
   []
   ["  PROBETRON_HOST              default for --host"
    "  PROBETRON_CHIP              default for --chip"
-   (str "  PROBETRON_SPEED_KHZ         default for --speed-khz (" op/default-speed-khz ")")
+   (str "  PROBETRON_SPEED_KHZ         override --speed-khz defaults ("
+        op/default-speed-khz "; run-ram " op/default-ram-speed-khz ")")
    (str "  PROBETRON_UART_BAUD         default for --baud (" op/default-baud ")")
    (str "  PROBETRON_USB_WAIT_SECONDS  default for --usb-wait-seconds ("
         op/default-usb-wait-seconds ")")
@@ -64,6 +65,8 @@
      :status  {:host value :usb flag :format value}
      :log     {:host value :usb flag}
      :flash   (merge {:host value :usb flag} chip-and-speed)
+     :run     (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
+     :run-ram (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
      :erase   (merge {:host value :usb flag} chip-and-speed)
      :reset   {:host value :usb flag}
      :shell   {:host value :usb flag}
@@ -85,6 +88,8 @@
    :status  "  probetron status  --host <host> [--format <text|edn>]"
    :log     "  probetron log     --host <host>"
    :flash   "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] <elf>"
+   :run     "  probetron run     --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <elf>"
+   :run-ram "  probetron run-ram --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <ram-elf>"
    :erase   "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
    :reset   "  probetron reset   --host <host>"
    :connect (str "  probetron connect --host <host> --channel <usb|uart> [--baud <baud>]"

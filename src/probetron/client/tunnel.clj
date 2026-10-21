@@ -6,9 +6,9 @@
    port, prints that endpoint, presents it as a pseudo-terminal when the client
    asked for one, and holds the session until the rig command ends or a
    handled signal arrives.
-   connect forwards the rig byte service and debug forwards the rig DAP
-   server, so an editor connects to the printed endpoint and disconnects from
-   it as often as it likes while the outer command keeps the rig target.
+   Connect forwards the rig byte service and debug forwards the rig DAP server.
+   Run uploads an ELF and streams the monitor output without a TCP forward.
+   Every session keeps the target until its outer command ends.
    Cleanup stops the local helpers alone, because only the rig ever touches
    the DUT: --reset-on-exit travels to the rig and never becomes a client
    action."
@@ -25,7 +25,7 @@
 
 (def operations
   "The client operations that hold the rig target until the client lets go."
-  #{:connect :debug})
+  #{:connect :debug :run :run-ram})
 
 (def terminate-grace-ms
   "How long a local helper has to answer the first ask before the client insists."
@@ -40,20 +40,20 @@
       (hold! operation path runtime))))
 
 (defn hold!
-  "Publish the rig service on the client and hold it until the outer command ends.
+  "Hold the target until the outer command ends.
 
-   The endpoint appears as soon as SSH starts, so a host program has somewhere
-   to go while the forward and the rig target are still opening, and a
-   forward that never appeared ends the whole session."
+   Connect and debug print the forwarded service endpoint when SSH starts.
+   Run streams the monitor directly and publishes no endpoint."
   [operation key-path runtime]
-  (let [port  (session-port operation runtime)
+  (let [port  (when-not (#{:run :run-ram} (:operation operation)) (session-port operation runtime))
         state (atom {:cleaned? false})]
     (try
       (let [ssh (start-ssh! operation key-path port runtime)]
         (swap! state assoc :ssh ssh)
         (register-cleanup! state runtime)
-        (println (command/service-endpoint port))
-        (flush)
+        (when port
+          (println (command/service-endpoint port))
+          (flush))
         (when (:pty? operation) (start-pty! state port runtime))
         (await-session! operation ssh))
       (finally (clean-up! state runtime)))))
@@ -69,11 +69,12 @@
   ;; optional upload, so the rig sees end of input exactly when this client dies
   ;; — however it dies — and releases the target then. An upload is framed with
   ;; its length rather than closing the stream, so the tether outlives it.
-  (let [ssh (spawn! (command/session-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
-                                          port
-                                          (rig-port operation)
-                                          (command/remote-command operation))
-                    {:in :stream :out :inherit :err :inherit})]
+  (let [request {:ssh (:ssh executables) :key key-path :host (:host operation)}
+        remote  (command/remote-command operation)
+        argv    (if (#{:run :run-ram} (:operation operation))
+                  (command/ssh-argv request remote)
+                  (command/session-argv request port (rig-port operation) remote))
+        ssh     (spawn! argv {:in :stream :out :inherit :err :inherit})]
     (when-let [elf (op/stdin-elf operation)]
       (send-framed-elf! (:in ssh) elf))
     ssh))

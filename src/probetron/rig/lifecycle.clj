@@ -24,6 +24,8 @@
    :flash   :short
    :erase   :short
    :reset   :short
+   :run     :session
+   :run-ram :session
    :connect :session
    :debug   :session})
 

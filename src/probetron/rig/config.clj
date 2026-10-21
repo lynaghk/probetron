@@ -47,6 +47,15 @@
                               (= :flash command) (assoc :elf :stdin)
                               (terminal values) (assoc :terminal (terminal values)))))
 
+    (:run :run-ram)
+    (op/finish (op/collect op/chip-and-speed-fields (assoc context :command command))
+               [(op/unexpected-argument-error args)]
+               (fn [values] {:operation      command
+                             :chip           (:chip values)
+                             :speed-khz      (:speed-khz values)
+                             :elf            :stdin
+                             :reset-on-exit? (true? (:reset-on-exit opts))}))
+
     :reset
     (op/finish [{} []]
                [(op/unexpected-argument-error args)]
@@ -118,6 +127,8 @@
     {:info    {:speed-khz value :format value}
      :status  {:format value}
      :flash   flash-or-erase
+     :run     (merge chip-and-speed {:reset-on-exit flag})
+     :run-ram (merge chip-and-speed {:reset-on-exit flag})
      :erase   flash-or-erase
      :reset   {}
      :log     {}
@@ -138,6 +149,8 @@
                  " [--terminal-cols <columns> --terminal-rows <rows>]")
    :erase   (str "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
                  " [--terminal-cols <columns> --terminal-rows <rows>]")
+   :run     "  probetron-rig run --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
+   :run-ram "  probetron-rig run-ram --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
    :reset   "  probetron-rig reset"
    :connect (str "  probetron-rig connect --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--rtt --chip <chip> [--speed-khz <speed>]]"
@@ -153,7 +166,7 @@
                      "Usage:"]
                     (frontend/usage-lines front-end)
                     [""
-                     "flash and connect --rtt read one bounded ELF file from standard input."])))
+                     "flash, run, and connect --rtt read one bounded ELF file from standard input."])))
 
 (def front-end
   "How the rig protocol reaches the operation model.

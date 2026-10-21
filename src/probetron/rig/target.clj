@@ -146,6 +146,11 @@
   (when-let [reason (elf/error (fs/read-all-bytes path))]
     (str "the upload is not a flashable target ELF file: " reason)))
 
+(defn ram-elf-refusal
+  "Return why an uploaded ELF is not a supported SRAM-only image, or nil."
+  [path]
+  (elf/ram-error (fs/read-all-bytes path)))
+
 (defn with-upload!
   "Run the body that owns one upload and remove the upload on every exit path.
 
