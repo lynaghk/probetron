@@ -1,0 +1,22 @@
+[package]
+name = "rp2350-turnaround"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+ram = []
+
+[dependencies]
+cortex-m = { version = "0.7", features = ["inline-asm"] }
+cortex-m-rt = "0.7"
+rp235x-hal = { version = "0.4", features = ["rt", "critical-section-impl"] }
+rtt-target = "0.6"
+panic-halt = "1"
+
+[profile.release]
+opt-level = 2
+debug = 2
+
+[lints.rust]
+unreachable_pub = "deny"
