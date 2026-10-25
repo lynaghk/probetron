@@ -21,7 +21,7 @@
 (def exit-busy 75)
 
 ;; Defaults and bounds of the target-specific values.
-(def default-speed-khz 1000)
+(def default-speed-khz 8000)
 (def default-ram-speed-khz 12000)
 (def min-speed-khz 1)
 (def max-speed-khz 50000)

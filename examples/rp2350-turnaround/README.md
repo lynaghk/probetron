@@ -29,7 +29,7 @@ The complete image contains 437,488 loadable bytes.
 
 ## Run
 
-From the repository root:
+From the repository root, with the updated rig binary:
 
 ```sh
 bin/probetron run --host probetron.home.arpa --chip RP235x examples/rp2350-turnaround/target/flash.elf
@@ -38,6 +38,7 @@ bin/probetron run-ram --host probetron.home.arpa --chip RP235x examples/rp2350-t
 
 Both commands verify before starting firmware.
 A physical reset ends RAM takeover and starts installed flash firmware.
+See [the turnaround report](../../docs/turnaround.md) for measurements, deployment, and repeatable qualification commands.
 
 ## Checks
 

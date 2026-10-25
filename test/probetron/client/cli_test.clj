@@ -64,7 +64,7 @@
     (is (str/includes? (usage-error ["info" "--host" "pi" "--local-port" "3333"]) "--local-port"))))
 
 (deftest info-and-status
-  (is (= {:operation :info :host "pi.lab" :format :text :speed-khz 1000} (operation ["info" "--host" "pi.lab"])))
+  (is (= {:operation :info :host "pi.lab" :format :text :speed-khz 8000} (operation ["info" "--host" "pi.lab"])))
   (is (= {:operation :status :host "10.0.0.7" :format :edn}
          (operation ["status" "--host" "10.0.0.7" "--format" "edn"])))
   (is (= {:operation :log :host "pi.lab"} (operation ["log" "--host" "pi.lab"]))
@@ -91,7 +91,7 @@
     (is (str/includes? (usage-error ["info" "--host" host]) "--host") (pr-str host))))
 
 (deftest flash-operations
-  (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 1000 :elf "firmware.elf"}
+  (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 8000 :elf "firmware.elf"}
          (operation ["flash" "--host" "pi" "--chip" "RP2350" "firmware.elf"])))
   (is (= 4000 (:speed-khz (operation ["flash" "--host" "pi" "--chip" "RP2350" "--speed-khz" "4000" "firmware.elf"]))))
   (testing "the environment supplies chip and speed defaults"
@@ -132,7 +132,7 @@
     (is (str/includes? (usage-error ["erase" "--host" "pi" "--chip" chip]) "--chip") (pr-str chip))))
 
 (deftest erase-and-reset
-  (is (= {:operation :erase :host "pi" :chip "RP2350" :speed-khz 1000}
+  (is (= {:operation :erase :host "pi" :chip "RP2350" :speed-khz 8000}
          (operation ["erase" "--host" "pi" "--chip" "RP2350"])))
   (is (= {:operation :reset :host "pi"} (operation ["reset" "--host" "pi"]))))
 
@@ -173,7 +173,7 @@
   (is (str/includes? (usage-error ["connect" "--host" "pi" "--channel" "spi"]) "--channel")))
 
 (deftest connect-rtt-and-session-options
-  (is (= {:elf "app.elf" :chip "RP2350" :speed-khz 1000}
+  (is (= {:elf "app.elf" :chip "RP2350" :speed-khz 8000}
          (:rtt (operation ["connect" "--host" "pi" "--channel" "usb" "--rtt" "app.elf" "--chip" "RP2350"]))))
   (is (= {:elf "app.elf" :chip "RP2350" :speed-khz 2000}
          (:rtt (operation ["connect" "--host" "pi" "--channel" "usb" "--rtt" "app.elf" "--speed-khz" "2000"]

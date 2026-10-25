@@ -223,9 +223,14 @@ Here's the output of `probetron help`:
     Environment:
       PROBETRON_HOST              default for --host
       PROBETRON_CHIP              default for --chip
-      PROBETRON_SPEED_KHZ         default for --speed-khz (1000)
+      PROBETRON_SPEED_KHZ         default for --speed-khz (8000; run-ram 12000)
       PROBETRON_UART_BAUD         default for --baud (115200)
       PROBETRON_USB_WAIT_SECONDS  default for --usb-wait-seconds (10)
+
+SWD operations default to an 8 MHz request; `run-ram` defaults to 12 MHz.
+The 8 MHz default requires the updated rig image with the corrected probe-rs binary.
+Use `--speed-khz 1000` if your target or wiring needs a lower speed.
+See [the turnaround report](docs/turnaround.md) for measurements and deployment details.
 
 Hopefully most of the operations are self-explanatory.
 

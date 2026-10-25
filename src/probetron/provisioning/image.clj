@@ -417,11 +417,9 @@
 (defn build-probe-rs!
   "Compile the probe-rs CLI from the vendored fork and return its staged path.
 
-   The image builds probe-rs from vendor/probe-rs rather than fetching a binary,
-   because the fork carries an SWD reset-and-halt fix that no stock release
-   ships yet. Building on the pinned Debian host links the binary against the base
-   image's own GLIBC, and the release profile strips it so it stays as small as a
-   published one. A warm cargo cache makes a repeat build cheap."
+   The submodule pins upstream plus the SPI throughput, selector routing, and RAM monitor patches.
+   Building on the pinned Debian host links against the image's GLIBC.
+   The release profile strips the staged executable."
   []
   (let [source (fs/path project-root probe-rs-source)
         binary (fs/path source "target" "release" "probe-rs")

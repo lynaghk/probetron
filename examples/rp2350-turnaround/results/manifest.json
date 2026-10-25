@@ -1,0 +1,84 @@
+{
+  "rig": "Raspberry Pi 4, probetron.home.arpa, Pico 2 W ARM RP235x, SPI0 /dev/spidev0.0",
+  "toolchain": "Rust 1.99.1, native aarch64 Linux; locked dependencies; release binary with DWARF stripped",
+  "binaries": {
+    "fork": {
+      "commit": "cc374c97",
+      "sha256": "ee651b6a94f23b3a33048efc8ea18f01a932afdfa7754a498f5c6d1a77804a5b"
+    },
+    "upstream": {
+      "commit": "f6b571a3917de61ba7df771cec6ac74c8ea03fc9",
+      "sha256": "9664ea8dc212296de5b98b331e9ee316c48cb7ad607e8fb4da09e63cf6622c59"
+    },
+    "batched": {
+      "base_commit": "8044798a",
+      "source_state": "Read-batching diagnostic before adaptive retries; concurrent monitor-only work may also be present.",
+      "sha256": "ff20f51c94d9e26f017504029b7047d3ee48f6993d324d23c8b64ce79a336179"
+    },
+    "selected": {
+      "commit": "2244c031cee8c856c94135117885f67207410199",
+      "source_equivalent_commit": "53b3b2ff52820a4d966b52b893a7ef6ea739fe89",
+      "sha256": "1aaf22ec1aa586e3344db1634ca31366b7c8562451c8c36ce6a409f8ada30ff2"
+    }
+  },
+  "firmware": {
+    "flash": {
+      "sha256": "a156a1160274a5083ed54b3d3fb52c14ddb8e3612e18ebd110f5189799db136d",
+      "loadable_bytes": 437488
+    },
+    "ram": {
+      "sha256": "a194fe8da53dd867ed908aaf10ef2bfa99746c100a087669f8c276b3c6ce4d57",
+      "loadable_bytes": 437488
+    }
+  },
+  "expected_ready": "TURNAROUND READY bytes=425984 checksum=0da11840",
+  "qualification": {
+    "selected-flash-idle": {
+      "passes": 10,
+      "trials": 10,
+      "median_load_seconds": 11.785,
+      "median_command_to_ready_seconds": 12.0733612885
+    },
+    "selected-flash-cpu": {
+      "passes": 10,
+      "trials": 10,
+      "median_load_seconds": 11.565,
+      "median_command_to_ready_seconds": 11.849390770500001
+    },
+    "selected-ram-idle": {
+      "passes": 20,
+      "trials": 20,
+      "median_load_seconds": 3.82,
+      "median_command_to_ready_seconds": 4.0598512200000005
+    },
+    "selected-ram-cpu": {
+      "passes": 20,
+      "trials": 20,
+      "median_load_seconds": 2.245,
+      "median_command_to_ready_seconds": 2.4856168875
+    },
+    "selected-public-flash": {
+      "passes": 3,
+      "trials": 3,
+      "median_load_seconds": 11.7,
+      "median_command_to_ready_seconds": 12.583095668
+    },
+    "selected-public-ram": {
+      "passes": 3,
+      "trials": 3,
+      "median_load_seconds": 3.82,
+      "median_command_to_ready_seconds": 4.613091496
+    }
+  },
+  "selected_verified_executions": 70,
+  "selected_additional_checks": [
+    "public flash command with default speed",
+    "independent full-image read-back at 1 MHz"
+  ],
+  "raw_records": 86,
+  "maximum_selected_temperature_mC": 70601,
+  "selected_throttling_flags": [
+    0
+  ],
+  "monitor_stop": "SIGINT after the exact READY marker; teardown exit codes are not programming failures."
+}

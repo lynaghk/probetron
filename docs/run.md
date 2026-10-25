@@ -8,9 +8,10 @@ probetron run --host probetron.home.arpa --chip RP235x firmware.elf
 probetron run-ram --host probetron.home.arpa --chip RP235x firmware-ram.elf
 ```
 
-SWD operations default to a 1 MHz request; `run-ram` defaults to 12 MHz.
+SWD operations default to an 8 MHz request; `run-ram` defaults to 12 MHz.
 An explicit `--speed-khz` overrides `PROBETRON_SPEED_KHZ`, which overrides the command default.
 Use `--speed-khz 1000` for conservative recovery or targets and wiring that need a lower speed.
+See [the turnaround report](turnaround.md) for the required probe-rs version and hardware qualification.
 
 ## RAM takeover
 
@@ -21,6 +22,7 @@ Generic `run` can use other memory layouts.
 Link code, vectors, constants, and data into SRAM.
 A normal flash-linked ELF cannot be relocated by changing the command.
 Use `readelf -lW firmware-ram.elf` to inspect LOAD addresses.
+The [Pico 2 W example](../examples/rp2350-turnaround/README.md) provides both linker layouts.
 
 RAM execution takes over the target; it does not preserve the previous application's state.
 A reset returns to installed flash firmware, and power loss discards the RAM image.
@@ -45,4 +47,5 @@ mise exec -- bb rig-dev-deploy --host probetron.home.arpa
 ```
 
 The overlay disappears on reboot or `bb rig-dev-reset`.
+See [binary deployment](turnaround.md#deployment) for a temporary executable update.
 Build and flash a new SD image for a persistent update.

@@ -8,7 +8,9 @@ import sys
 
 
 def main():
-    paths = [Path(p) for p in sys.argv[1:]] or [Path("results/trials.json.gz")]
+    if len(sys.argv) < 2:
+        raise SystemExit("Usage: summarize.py TRIAL.json[.gz] ...")
+    paths = [Path(p) for p in sys.argv[1:]]
     summaries = []
     for path in paths:
         read = gzip.open if path.suffix == ".gz" else open
