@@ -12,24 +12,18 @@
    Cleanup stops the local helpers alone, because only the rig ever touches
    the DUT: --reset-on-exit travels to the rig and never becomes a client
    action."
-  (:require [babashka.fs :as fs]
-            [probetron.client.command :as command]
+  (:require [probetron.client.command :as command]
             [probetron.client.key :as rig-key]
             [probetron.client.session :as session]
-            [probetron.operation :as op])
-  (:import (java.io DataOutputStream OutputStream)
-           (java.util.concurrent TimeUnit)))
+            [probetron.client.tether :refer [send-framed-elf! stop-process!]]
+            [probetron.operation :as op]))
 
-(declare hold! start-ssh! send-framed-elf! start-pty! watch-pty! await-session! session-port
-         rig-port register-cleanup! clean-up! stop-process! refuse-pty!)
+(declare hold! start-ssh! start-pty! watch-pty! await-session! session-port
+         rig-port register-cleanup! clean-up! refuse-pty!)
 
 (def operations
   "The client operations that hold the rig target until the client lets go."
   #{:connect :debug :run :run-ram})
-
-(def terminate-grace-ms
-  "How long a local helper has to answer the first ask before the client insists."
-  2000)
 
 (defn open!
   "Open one long client session and return the status that the rig gave it."
@@ -78,18 +72,6 @@
     (when-let [elf (op/stdin-elf operation)]
       (send-framed-elf! (:in ssh) elf))
     ssh))
-
-(defn send-framed-elf!
-  "Write one ELF to the open SSH standard input, framed by a four-byte length.
-
-   The stream stays open afterward, so the same standard input the rig read the
-   ELF from goes on serving as the client tether."
-  [out elf-path]
-  (let [bytes  (fs/read-all-bytes elf-path)
-        framed (DataOutputStream. ^OutputStream out)]
-    (.writeInt framed (alength ^bytes bytes))
-    (.write framed ^bytes bytes)
-    (.flush framed)))
 
 (defn start-pty!
   "Present the forwarded endpoint as a pseudo-terminal, or say why the client cannot.
@@ -163,15 +145,6 @@
       (stop-process! (:pty before))
       (when-let [directory (:pty-directory before)] (delete-link-directory! directory))
       (stop-process! (:ssh before)))))
-
-(defn stop-process!
-  "End one local helper and wait for it, forcibly when it ignores the first ask."
-  [helper]
-  (when-let [process ^Process (:proc helper)]
-    (.destroy process)
-    (when-not (.waitFor process terminate-grace-ms TimeUnit/MILLISECONDS)
-      (.destroyForcibly process)
-      (.waitFor process terminate-grace-ms TimeUnit/MILLISECONDS))))
 
 (defn refuse-pty!
   "Say why this client cannot present a pseudo-terminal and what repairs it."

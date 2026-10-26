@@ -128,9 +128,12 @@
 (defn start-helper!
   "Start one long-running helper as its own process group and own it until cleanup."
   [state {:keys [executables spawn!]} argv opts]
-  (let [helper (spawn! (lifecycle/group-command executables argv) opts)]
-    (swap! state update :groups conj {:pgid (.pid (:proc helper)) :process helper})
-    helper))
+  (locking state
+    (when (:cleaned? @state)
+      (throw (ex-info "the client disconnected before the helper started" {})))
+    (let [helper (spawn! (lifecycle/group-command executables argv) opts)]
+      (swap! state update :groups conj {:pgid (.pid (:proc helper)) :process helper})
+      helper)))
 
 (defn clean-up!
   "Reap the owned process groups, run the optional reset, drop the metadata, and release the lock.
@@ -139,10 +142,11 @@
    handled signal arrived, and the default path leaves the target alone."
   [state runtime]
   (let [mine     (promise)
-        [before] (swap-vals! state
-                             (fn [s] (if (:cleaned? s)
-                                       s
-                                       (assoc s :cleaned? true :cleanup-done mine))))]
+        [before] (locking state
+                   (swap-vals! state
+                               (fn [s] (if (:cleaned? s)
+                                         s
+                                         (assoc s :cleaned? true :cleanup-done mine)))))]
     (if (:cleaned? before)
       ;; Another caller owns the cleanup; wait for it to finish before returning,
       ;; so the lock is really back by the time any caller leaves.

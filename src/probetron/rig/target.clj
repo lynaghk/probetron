@@ -17,7 +17,7 @@
   (:import (java.io InputStream OutputStream)))
 
 (declare report-information! flash! erase! reset-target! pulse-reset!
-         capture! upload-path receive-elf! receive-session-elf! read-uint32! with-upload!
+         capture! upload-path receive-session-elf! read-uint32! with-upload!
          copy-bounded! elf-refusal oversize-message missing-status refuse!)
 
 (defn perform!
@@ -26,8 +26,8 @@
   (let [runtime (:runtime session)]
     (case (:operation operation)
       :info (report-information! operation runtime)
-      :flash (flash! operation runtime)
-      :erase (erase! operation runtime)
+      :flash (flash! operation session)
+      :erase (erase! operation session)
       :reset (reset-target! operation runtime))))
 
 (defn report-information!
@@ -55,28 +55,36 @@
 
    The upload validates before probe-rs opens the target, and the RUN line
    pulses only after probe-rs verified what it wrote."
-  [{:keys [chip speed-khz terminal]} {:keys [executables hardware run!] :as runtime}]
-  (or (missing-status runtime [:probe-rs :spi-device :gpioset :gpio-chip])
-      (with-upload!
-        (upload-path runtime)
-        (fn [path]
-          (if-let [error (receive-elf! runtime path)]
-            (refuse! error)
-            (let [exit (:exit (run! (hardware/download-command
-                                     executables hardware
-                                     {:chip chip :speed-khz speed-khz :terminal terminal :path path})
-                                    {}))]
-              (if (zero? exit)
-                (pulse-reset! runtime)
-                exit)))))))
+  [{:keys [chip speed-khz terminal]} {:keys [runtime start-helper! watch-client! stopping?]}]
+  (let [{:keys [executables hardware]} runtime]
+    (or (missing-status runtime [:probe-rs :spi-device :gpioset :gpio-chip])
+        (with-upload!
+          (upload-path runtime)
+          (fn [path]
+            (if-let [error (receive-session-elf! runtime path)]
+              (refuse! error)
+              (do
+                (watch-client!)
+                (let [helper (start-helper! (hardware/download-command
+                                             executables hardware
+                                             {:chip chip :speed-khz speed-khz :terminal terminal :path path})
+                                            {:out :inherit :err :inherit})
+                      exit   (.waitFor ^Process (:proc helper))]
+                  (if (and (zero? exit) (not (stopping?)))
+                    (pulse-reset! runtime)
+                    exit)))))))))
 
 (defn erase!
   "Erase the target once and give back exactly the status probe-rs returned."
-  [{:keys [chip speed-khz terminal]} {:keys [executables hardware run!] :as runtime}]
-  (or (missing-status runtime [:probe-rs :spi-device])
-      (:exit (run! (hardware/erase-command executables hardware
-                                           {:chip chip :speed-khz speed-khz :terminal terminal})
-                   {}))))
+  [{:keys [chip speed-khz terminal]} {:keys [runtime start-helper! watch-client!]}]
+  (let [{:keys [executables hardware]} runtime]
+    (or (missing-status runtime [:probe-rs :spi-device])
+        (do
+          (watch-client!)
+          (let [helper (start-helper! (hardware/erase-command executables hardware
+                                                              {:chip chip :speed-khz speed-khz :terminal terminal})
+                                      {:out :inherit :err :inherit})]
+            (.waitFor ^Process (:proc helper)))))))
 
 (defn reset-target!
   "Complete the requested reset sequence and preserve probe-rs diagnostics and status."
@@ -103,38 +111,24 @@
     (fs/create-dirs directory)
     (str (fs/path directory (str "upload-" (random-uuid) ".elf")))))
 
-(defn receive-elf!
-  "Read a short operation's ELF from standard input, delimited by end of input.
-
-   A short operation reads its upload to end of input and then ends, so it needs
-   no more of standard input and lets the client close it. It stops one byte
-   past the limit, so an oversized upload never fills the volatile filesystem,
-   and it returns the reason it refuses an upload, or nil."
-  [{:keys [hardware stdin]} path]
-  (let [limit (:max-elf-bytes hardware)
-        size  (copy-bounded! (stdin) path (inc limit))]
-    (if (> size limit) (oversize-message limit) (elf-refusal path))))
-
 (defn receive-session-elf!
   "Read a tethered session's ELF from standard input, delimited by a length.
 
    A session holds standard input open past its upload, because its end of input
-   is the client-gone signal the tether waits on (see the rig runner). It
-   therefore cannot delimit the ELF by end of input the way a short operation
-   does; the client frames the ELF with a four-byte big-endian length instead,
-   so the rig reads exactly the ELF and leaves the rest of standard input to the
-   tether. A truncated or oversized frame is refused before any hardware opens."
+   is the client-gone signal the tether waits on (see the rig runner).
+   The client frames the ELF with a four-byte big-endian length, so the rig reads
+   exactly the ELF and leaves the rest of standard input to the tether. A truncated or oversized frame is refused before any hardware opens."
   [{:keys [hardware stdin]} path]
   (let [limit  (:max-elf-bytes hardware)
         in     (stdin)
         length (read-uint32! in)]
     (cond
-      (nil? length) "the RTT upload ended before it declared its length"
-      (neg? length) "the RTT upload declared a negative length"
+      (nil? length) "the ELF upload ended before it declared its length"
+      (neg? length) "the ELF upload declared a negative length"
       (> length limit) (oversize-message limit)
       :else (let [size (copy-bounded! in path length)]
               (if (< size length)
-                "the RTT upload ended before the ELF length it declared"
+                "the ELF upload ended before the ELF length it declared"
                 (elf-refusal path))))))
 
 (defn read-uint32!

@@ -14,13 +14,14 @@
             [probetron.client.command :as command]
             [probetron.client.key :as rig-key]
             [probetron.client.report :as report]
+            [probetron.client.tether :as tether]
             [probetron.operation :as op]
             [probetron.version :as version])
   (:import (java.net InetAddress ServerSocket)))
 
 (declare invoke! relay! report-outcome! report-transport-failure! report-information!
          report-text! report-edn! report-unreadable! announce-waiting! rig-information
-         upload with-terminal progress-operations terminal-size!
+         with-terminal progress-operations terminal-size!
          environment default-runtime default-executables default-filesystem
          write-key! reserve-port! make-link-directory! fail! warn!)
 
@@ -80,10 +81,12 @@
    standard input, so no client path and no second shell token ever reach the
    rig."
   [operation key-path runtime streams]
-  (let [{:keys [executables run!]} runtime
-        argv                       (command/ssh-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
-                                                     (command/remote-command operation))
-        result                     (run! argv (merge {:in (upload operation)} streams))]
+  (let [{:keys [executables run! spawn!]} runtime
+        argv                              (command/ssh-argv {:ssh (:ssh executables) :key key-path :host (:host operation)}
+                                                            (command/remote-command operation))
+        result                            (if (#{:flash :erase} (:operation operation))
+                                            {:exit (tether/hold! argv (op/stdin-elf operation) spawn! streams)}
+                                            (run! argv (merge {:in ""} streams)))]
     (report-transport-failure! (:host operation) (:exit result))
     result))
 
@@ -162,17 +165,6 @@
       :edn (let [value (try (edn/read-string text) (catch Exception _ nil))]
              (when (map? value) value))
       :text (str/trim text))))
-
-(defn upload
-  "Return the standard input of one remote command.
-
-   Only a flash and an RTT session send bytes, and every other operation closes
-   standard input at once, so the rig never waits for a client that has
-   nothing to say."
-  [operation]
-  (if-let [path (op/stdin-elf operation)]
-    (fs/file path)
-    ""))
 
 (defn runtime
   "Return the client runtime.

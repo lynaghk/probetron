@@ -1,5 +1,6 @@
 (ns probetron.rig.target-test
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -10,7 +11,8 @@
             [probetron.rig.target :as target]
             [probetron.operation :as op]
             [probetron.version :as version])
-  (:import (java.io ByteArrayInputStream PipedInputStream StringWriter)))
+  (:import (java.io ByteArrayInputStream ByteArrayOutputStream DataOutputStream
+                    PipedInputStream PipedOutputStream SequenceInputStream StringWriter)))
 
 (declare with-rig! run-rig! appliance! by-command command-name probe-argv
          elf put8! put16! put32! flash-operation probe-rs gpioset)
@@ -259,7 +261,17 @@
   "Create a temporary appliance and return the runtime that owns it."
   [directory calls {:keys [stdin responses hardware]}]
   (let [path    (fn [name] (str (fs/path directory name)))
-        respond (or responses (constantly {:exit 0}))]
+        respond (or responses (constantly {:exit 0}))
+        input   (if (= :broken stdin)
+                  (PipedInputStream.)
+                  (let [frame  (ByteArrayOutputStream.)
+                        out    (DataOutputStream. frame)
+                        bytes  (or stdin (byte-array 0))
+                        tether (PipedInputStream.)]
+                    (.writeInt out (alength ^bytes bytes))
+                    (.write out ^bytes bytes)
+                    (PipedOutputStream. tether)
+                    (SequenceInputStream. (ByteArrayInputStream. (.toByteArray frame)) tether)))]
     (doseq [name ["probe-rs" "gpioset" "spidev0.0" "gpiochip0"]]
       (fs/create-file (fs/path directory name)))
     (fs/create-dirs (fs/path directory "uploads"))
@@ -275,9 +287,14 @@
                       :machine-id (path "machine-id")}
       :executables   {:probe-rs (path "probe-rs") :gpioset (path "gpioset")}
       :hardware      (merge {:spi-device (path "spidev0.0") :gpio-chip (path "gpiochip0")} hardware)
-      :stdin         (fn [] (if (= :broken stdin)
-                              (PipedInputStream.)
-                              (ByteArrayInputStream. (or stdin (byte-array 0)))))
+      :stdin         (constantly input)
+      :spawn!        (fn [argv opts]
+                       (if (= "setsid" (fs/file-name (first argv)))
+                         (let [command        (vec (drop 1 argv))
+                               _              (swap! calls conj command)
+                               {:keys [exit]} (respond command)]
+                           (process/process ["sh" "-c" (str "exit " (or exit 0))] {:throw false}))
+                         (process/process argv opts)))
       :run!          (fn [argv _opts] (swap! calls conj (vec argv)) (respond argv))
       :perform       target/perform!
       :reset-target! target/pulse-reset!})))

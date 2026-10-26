@@ -255,7 +255,12 @@
     (spit (str (fs/path home "rig-err")) (or err ""))
     (spit path (str "#!/bin/sh\n"
                     "printf '%s\\0' \"$0\" \"$@\" > " home "/argv\n"
-                    "cat > " home "/stdin\n"
+                    "for remote do :; done\n"
+                    "case \"$remote\" in\n"
+                    "  *' flash '*) bb -e '(let [in (java.io.DataInputStream. System/in) n (.readInt in) b (byte-array n)] (.readFully in b) (babashka.fs/write-bytes \"" home "/stdin\" b))' ;;\n"
+                    "  *' erase '*) : > " home "/stdin ;;\n"
+                    "  *) cat > " home "/stdin ;;\n"
+                    "esac\n"
                     "cat " home "/rig-out\n"
                     "cat " home "/rig-err >&2\n"
                     "exit " (or exit 0) "\n"))
@@ -273,12 +278,20 @@
                   :fetch!         (:fetch! client)
                   :terminal-size! (or (:terminal-size! client) (constantly nil))
                   :executables    {:ssh (:ssh client)}
+                  :spawn!         (fn [argv opts]
+                                    (let [helper (process/process argv (merge {:throw false} opts
+                                                                              {:out :string :err :string}))]
+                                      (swap! calls conj {:argv (vec argv) :opts opts :helper helper})
+                                      helper))
                   :run!           (fn [argv opts]
                                     (let [result @(process/process argv (merge {:throw false} opts
                                                                                {:out :string :err :string}))]
                                       (swap! calls conj {:argv (vec argv) :opts opts :result result})
                                       result))})
         exit    (binding [*out* out *err* err] (session/execute! operation runtime))]
+    (swap! calls (fn [recorded]
+                   (mapv (fn [{:keys [helper] :as call}]
+                           (if helper (assoc call :result @helper) call)) recorded)))
     {:exit exit :out (str out) :err (str err) :calls calls}))
 
 (defn run-shell!
