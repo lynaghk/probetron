@@ -195,6 +195,11 @@
   (with-pty (:script executables) terminal
     (probe-command executables hardware "erase" {:chip chip :speed-khz speed-khz})))
 
+(defn swd-reset-command
+  "Reset through the debug interface without using the reset pin."
+  [executables hardware attach]
+  (into (probe-command executables hardware "reset" attach) ["--method" "core"]))
+
 (defn probe-command
   "Return one probe-rs argv with the explicit probe, protocol, chip, and speed."
   [{:keys [probe-rs]} {:keys [probe-selector]} verb {:keys [chip speed-khz]}]

@@ -57,6 +57,17 @@
         (testing "no operation leaves a persistent host key behind"
           (is (empty? (fs/glob (:home client) "**/known_hosts"))))))))
 
+(deftest swd-reset-relays-the-method-and-probe-failure
+  (with-client! {:exit 2 :err "reset timed out\n"}
+    (fn [client]
+      (let [{:keys [exit calls]} (run-client! client {:operation :reset :host "pi.lab"
+                                                      :method    :swd   :chip "RP2350" :speed-khz 2000})]
+        (is (= 2 exit))
+        (is (= :inherit (get-in (first @calls) [:opts :err])))
+        (is (str/includes? (get-in (first @calls) [:result :err]) "reset timed out"))
+        (is (= "sudo -n /usr/local/sbin/probetron-rig reset --method swd --chip RP2350 --speed-khz 2000"
+               (last (recorded-argv client))))))))
+
 (deftest erase-carries-the-target-values-that-the-rig-needs
   (with-client! {}
     (fn [client]

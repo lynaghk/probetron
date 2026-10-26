@@ -16,7 +16,7 @@
             [probetron.version :as version])
   (:import (java.io InputStream OutputStream)))
 
-(declare report-information! flash! erase! pulse-reset!
+(declare report-information! flash! erase! reset-target! pulse-reset!
          capture! upload-path receive-elf! receive-session-elf! read-uint32! with-upload!
          copy-bounded! elf-refusal oversize-message missing-status refuse!)
 
@@ -28,7 +28,7 @@
       :info (report-information! operation runtime)
       :flash (flash! operation runtime)
       :erase (erase! operation runtime)
-      :reset (pulse-reset! runtime))))
+      :reset (reset-target! operation runtime))))
 
 (defn report-information!
   "Report what the rig is and what the probe finds on the SWD bus."
@@ -77,6 +77,14 @@
       (:exit (run! (hardware/erase-command executables hardware
                                            {:chip chip :speed-khz speed-khz :terminal terminal})
                    {}))))
+
+(defn reset-target!
+  "Complete the requested reset sequence and preserve probe-rs diagnostics and status."
+  [{:keys [method] :as operation} {:keys [executables hardware run!] :as runtime}]
+  (if (= :swd method)
+    (or (missing-status runtime [:probe-rs :spi-device])
+        (:exit (run! (hardware/swd-reset-command executables hardware operation) {})))
+    (pulse-reset! runtime)))
 
 (defn pulse-reset!
   "Hold the RUN line of the target low for the reset pulse and release it."

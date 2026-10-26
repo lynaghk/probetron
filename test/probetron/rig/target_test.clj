@@ -3,6 +3,8 @@
             [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [probetron.client.cli :as cli]
+            [probetron.rig.config :as config]
             [probetron.rig.hardware :as hardware]
             [probetron.rig.runner :as runner]
             [probetron.rig.target :as target]
@@ -195,10 +197,32 @@
              "--toggle" "100ms,0" "26=0"]]
            calls))))
 
+(deftest swd-reset-completes-once-and-preserves-the-probe-status
+  (doseq [status [0 2]]
+    (let [public    (:operation (cli/parse ["reset" "--host" "pi" "--method" "swd"
+                                            "--chip" "RP2350" "--speed-khz" "2000"] {}))
+          operation (:operation (config/parse (vec (rest (op/rig-command public))) {}))
+          {:keys [exit calls directory err]}
+          (with-rig! operation
+            {:remove    ["gpioset" "gpiochip0"]
+             :responses (fn [_]
+                          (when-not (zero? status)
+                            (binding [*out* *err*] (println "reset timed out")))
+                          {:exit status})})]
+      (is (= status exit))
+      (is (= [[(probe-rs directory) "reset" "--probe" "0:0:/dev/spidev0.0"
+               "--protocol" "swd" "--chip" "RP2350" "--speed" "2000" "--method" "core"]]
+             calls)
+          "neither success nor failure pulses the reset pin or retries")
+      (when-not (zero? status)
+        (is (str/includes? err "reset timed out"))))))
+
 (deftest a-missing-rig-resource-names-itself-and-the-repair
   (doseq [[operation resource repair]
           [[{:operation :info :format :text} "probe-rs" "reinstall the rig image"]
            [{:operation :erase :chip "RP235x" :speed-khz 1000} "spidev0.0" "SPI0"]
+           [{:operation :reset :method :swd :chip "RP2350"} "probe-rs" "reinstall the rig image"]
+           [{:operation :reset :method :swd :chip "RP2350"} "spidev0.0" "SPI0"]
            [{:operation :reset} "gpioset" "gpiod"]
            [{:operation :reset} "gpiochip0" "header pin 37"]
            [flash-operation "gpiochip0" "header pin 37"]]]

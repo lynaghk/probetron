@@ -68,7 +68,7 @@
      :run     (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
      :run-ram (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
      :erase   (merge {:host value :usb flag} chip-and-speed)
-     :reset   {:host value :usb flag}
+     :reset   (merge {:host value :usb flag :method value} chip-and-speed)
      :shell   {:host value :usb flag}
      :connect (merge {:host             value
                       :usb              flag
@@ -91,7 +91,7 @@
    :run     "  probetron run     --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <elf>"
    :run-ram "  probetron run-ram --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <ram-elf>"
    :erase   "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
-   :reset   "  probetron reset   --host <host>"
+   :reset   "  probetron reset   --host <host> [--method pin|swd] [--chip <chip> [--speed-khz <speed>]]"
    :connect (str "  probetron connect --host <host> --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--local-port <port>]"
                  " [--rtt <elf> --chip <chip> [--speed-khz <speed>]] [--pty] [--reset-on-exit]")

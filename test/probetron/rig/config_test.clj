@@ -73,8 +73,15 @@
 
 (deftest rig-erase-and-reset
   (is (= {:operation :erase :chip "RP2350" :speed-khz 8000} (operation ["erase" "--chip" "RP2350"])))
-  (is (= {:operation :reset} (operation ["reset"])))
+  (is (= {:operation :reset :method :pin} (operation ["reset"])))
   (is (str/includes? (usage-error ["reset" "--chip" "RP2350"]) "--chip")))
+
+(deftest rig-swd-reset
+  (is (= {:operation :reset :method :swd :chip "RP2350" :speed-khz 8000}
+         (operation ["reset" "--method" "swd" "--chip" "RP2350"])))
+  (is (str/includes? (usage-error ["reset" "--method" "swd"]) "missing --chip"))
+  (is (str/includes? (usage-error ["reset" "--method" "other"]) "expected pin or swd"))
+  (is (str/includes? (usage-error ["reset" "--speed-khz" "1000"]) "only with --method swd")))
 
 (deftest rig-connect
   (is (= {:operation :connect :channel :usb :usb-wait-seconds 10 :rtt nil :reset-on-exit? false}

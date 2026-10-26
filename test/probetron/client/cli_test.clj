@@ -134,7 +134,19 @@
 (deftest erase-and-reset
   (is (= {:operation :erase :host "pi" :chip "RP2350" :speed-khz 8000}
          (operation ["erase" "--host" "pi" "--chip" "RP2350"])))
-  (is (= {:operation :reset :host "pi"} (operation ["reset" "--host" "pi"]))))
+  (is (= {:operation :reset :host "pi" :method :pin} (operation ["reset" "--host" "pi"]))))
+
+(deftest swd-reset-options
+  (is (= {:operation :reset :host "pi" :method :swd :chip "RP2350" :speed-khz 2000}
+         (operation ["reset" "--host" "pi" "--method" "swd"]
+                    {:env {"PROBETRON_CHIP" "RP2350" "PROBETRON_SPEED_KHZ" "2000"}})))
+  (is (= :pin (:method (operation ["reset" "--host" "pi" "--method" "pin"]))))
+  (doseq [[args message] [[["--method" "swd"] "missing --chip"]
+                          [["--method" "other"] "expected pin or swd"]
+                          [["--chip" "RP2350"] "only with --method swd"]
+                          [["--speed-khz" "1000"] "only with --method swd"]
+                          [["--method" "swd" "--chip" "RP2350" "--speed-khz" "0"] "--speed-khz"]]]
+    (is (str/includes? (usage-error (into ["reset" "--host" "pi"] args)) message))))
 
 (deftest connect-channels
   (is (= {:operation        :connect

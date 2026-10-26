@@ -57,9 +57,7 @@
                              :reset-on-exit? (true? (:reset-on-exit opts))}))
 
     :reset
-    (op/finish [{} []]
-               [(op/unexpected-argument-error args)]
-               (fn [_] {:operation :reset}))
+    (op/build-reset [] context)
 
     :log
     (op/finish [{} []]
@@ -130,7 +128,7 @@
      :run     (merge chip-and-speed {:reset-on-exit flag})
      :run-ram (merge chip-and-speed {:reset-on-exit flag})
      :erase   flash-or-erase
-     :reset   {}
+     :reset   (merge {:method value} chip-and-speed)
      :log     {}
      :connect (merge {:channel          value
                       :baud             value
@@ -151,7 +149,7 @@
                  " [--terminal-cols <columns> --terminal-rows <rows>]")
    :run     "  probetron-rig run --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
    :run-ram "  probetron-rig run-ram --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
-   :reset   "  probetron-rig reset"
+   :reset   "  probetron-rig reset [--method pin|swd] [--chip <chip> [--speed-khz <speed>]]"
    :connect (str "  probetron-rig connect --channel <usb|uart> [--baud <baud>]"
                  " [--usb-wait-seconds <seconds>] [--rtt --chip <chip> [--speed-khz <speed>]]"
                  " [--reset-on-exit]")

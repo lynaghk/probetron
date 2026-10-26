@@ -8,9 +8,9 @@
             [clojure.string :as str]))
 
 (declare build-command usb-error connect-fields connect-option-errors fields resolve-field
-         parse-host parse-chip
+         parse-host parse-chip build-reset
          parse-speed-khz parse-baud parse-usb-wait-seconds parse-local-port parse-channel
-         parse-format parse-terminal-dimension parse-integer ok invalid
+         parse-format parse-reset-method parse-terminal-dimension parse-integer ok invalid
          hostname? ipv4-literal? ipv6-literal?)
 
 ;; Exit statuses of both entry points.
@@ -92,7 +92,9 @@
           (:flash :erase) (into (chip-and-speed-args public) (terminal-args public))
           (:run :run-ram) (cond-> (chip-and-speed-args public)
                             reset-on-exit? (conj "--reset-on-exit"))
-          :reset []
+          :reset (if (= :swd (:method public))
+                   (into ["--method" "swd"] (chip-and-speed-args public))
+                   [])
           :log []
           :connect (cond-> ["--channel" (name channel)]
                      (= :uart channel) (into ["--baud" (str baud)])
@@ -231,9 +233,7 @@
                           :speed-khz (:speed-khz values)}))
 
     :reset
-    (finish (collect [:host] context)
-            [(unexpected-argument-error args)]
-            (fn [values] {:operation :reset :host (:host values)}))
+    (build-reset [:host] context)
 
     :log
     (finish (collect [:host] context)
@@ -277,6 +277,19 @@
             [(unexpected-argument-error args)]
             (fn [values] {:operation :shell :host (:host values)}))))
 
+(defn build-reset
+  "Build a reset operation with target options only for an SWD reset."
+  [base-fields {:keys [opts args] :as context}]
+  (let [[values errors]        (collect (conj base-fields :method) context)
+        swd?                   (= :swd (:method values))
+        [attach attach-errors] (collect (if swd? chip-and-speed-fields []) context)]
+    (finish [(merge values attach) (into errors attach-errors)]
+            (into [(unexpected-argument-error args)]
+                  (for [field chip-and-speed-fields
+                        :when (and (contains? opts field) (not swd?))]
+                    (str "invalid --" (name field) ": it is valid only with --method swd")))
+            #(assoc % :operation :reset))))
+
 (defn connect-fields
   "Return the extra fields that one connect command resolves.
 
@@ -317,6 +330,7 @@
    :terminal-cols    {:flag "--terminal-cols" :label "<columns>" :parse #'parse-terminal-dimension}
    :terminal-rows    {:flag "--terminal-rows" :label "<rows>" :parse #'parse-terminal-dimension}
    :channel          {:flag "--channel" :label "<usb|uart>" :parse #'parse-channel :required? true}
+   :method           {:flag "--method" :label "<pin|swd>" :parse #'parse-reset-method :default :pin}
    :format           {:flag "--format" :label "<text|edn>" :parse #'parse-format :default :text}})
 
 (defn resolve-field
@@ -387,6 +401,13 @@
   (if-let [channel (some #{(keyword value)} channels)]
     (ok channel)
     (invalid (str "expected one of " (str/join " or " (map name channels))))))
+
+(defn parse-reset-method
+  "Accept pin or SWD reset without an automatic fallback."
+  [value]
+  (if (#{"pin" "swd"} value)
+    (ok (keyword value))
+    (invalid "expected pin or swd")))
 
 (defn parse-format
   "Accept the output format of an information operation."
