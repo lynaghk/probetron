@@ -44,7 +44,7 @@
   (is (= {:operation :log} (operation ["log"])) "the rig prints its DUT record"))
 
 (deftest rig-flash-reads-the-elf-from-standard-input
-  (is (= {:operation :flash :chip "RP2350" :speed-khz 8000 :elf :stdin}
+  (is (= {:operation :flash :chip "RP2350" :speed-khz 8000 :elf :stdin :reset-method :swd}
          (operation ["flash" "--chip" "RP2350"])))
   (is (= 4000 (:speed-khz (operation ["flash" "--chip" "RP2350" "--speed-khz" "4000"]))))
   (testing "no client path reaches the rig"
@@ -73,15 +73,15 @@
 
 (deftest rig-erase-and-reset
   (is (= {:operation :erase :chip "RP2350" :speed-khz 8000} (operation ["erase" "--chip" "RP2350"])))
-  (is (= {:operation :reset :method :pin} (operation ["reset"])))
-  (is (str/includes? (usage-error ["reset" "--chip" "RP2350"]) "--chip")))
+  (is (= {:operation :reset :method :pin} (operation ["reset" "--method" "pin"])))
+  (is (str/includes? (usage-error ["reset" "--method" "pin" "--chip" "RP2350"]) "--chip")))
 
 (deftest rig-swd-reset
   (is (= {:operation :reset :method :swd :chip "RP2350" :speed-khz 8000}
-         (operation ["reset" "--method" "swd" "--chip" "RP2350"])))
+         (operation ["reset" "--chip" "RP2350"])))
   (is (str/includes? (usage-error ["reset" "--method" "swd"]) "missing --chip"))
   (is (str/includes? (usage-error ["reset" "--method" "other"]) "expected pin or swd"))
-  (is (str/includes? (usage-error ["reset" "--speed-khz" "1000"]) "only with --method swd")))
+  (is (str/includes? (usage-error ["reset" "--method" "pin" "--speed-khz" "1000"]) "only with --method swd")))
 
 (deftest rig-connect
   (is (= {:operation :connect :channel :usb :usb-wait-seconds 10 :rtt nil :reset-on-exit? false}

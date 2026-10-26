@@ -60,7 +60,7 @@
   (is (str/includes? (usage-error ["fry" "--host" "pi"]) "fry"))
   (is (str/includes? (usage-error ["info" "--host" "pi" "--nozzle" "2"]) "--nozzle"))
   (testing "an option belongs only to the commands that document it"
-    (is (str/includes? (usage-error ["reset" "--host" "pi" "--chip" "RP2350"]) "--chip"))
+    (is (str/includes? (usage-error ["reset" "--host" "pi" "--method" "pin" "--chip" "RP2350"]) "--chip"))
     (is (str/includes? (usage-error ["info" "--host" "pi" "--local-port" "3333"]) "--local-port"))))
 
 (deftest info-and-status
@@ -91,17 +91,17 @@
     (is (str/includes? (usage-error ["info" "--host" host]) "--host") (pr-str host))))
 
 (deftest flash-operations
-  (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 8000 :elf "firmware.elf"}
+  (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 8000 :elf "firmware.elf" :reset-method :swd}
          (operation ["flash" "--host" "pi" "--chip" "RP2350" "firmware.elf"])))
   (is (= 4000 (:speed-khz (operation ["flash" "--host" "pi" "--chip" "RP2350" "--speed-khz" "4000" "firmware.elf"]))))
   (testing "the environment supplies chip and speed defaults"
-    (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 2000 :elf "firmware.elf"}
+    (is (= {:operation :flash :host "pi" :chip "RP2350" :speed-khz 2000 :elf "firmware.elf" :reset-method :swd}
            (operation ["flash" "firmware.elf"]
                       {:env {"PROBETRON_HOST"      "pi"
                              "PROBETRON_CHIP"      "RP2350"
                              "PROBETRON_SPEED_KHZ" "2000"}}))))
   (testing "explicit options win over the environment"
-    (is (= {:operation :flash :host "pi" :chip "RP2040" :speed-khz 500 :elf "firmware.elf"}
+    (is (= {:operation :flash :host "pi" :chip "RP2040" :speed-khz 500 :elf "firmware.elf" :reset-method :swd}
            (operation ["flash" "--host" "pi" "--chip" "RP2040" "--speed-khz" "500" "firmware.elf"]
                       {:env {"PROBETRON_CHIP" "RP2350" "PROBETRON_SPEED_KHZ" "2000"}}))))
   (is (str/includes? (usage-error ["flash" "--host" "pi" "firmware.elf"]) "--chip"))
@@ -134,17 +134,19 @@
 (deftest erase-and-reset
   (is (= {:operation :erase :host "pi" :chip "RP2350" :speed-khz 8000}
          (operation ["erase" "--host" "pi" "--chip" "RP2350"])))
-  (is (= {:operation :reset :host "pi" :method :pin} (operation ["reset" "--host" "pi"]))))
+  (is (= {:operation :reset :host "pi" :method :swd :chip "RP2350" :speed-khz 8000}
+         (operation ["reset" "--host" "pi" "--chip" "RP2350"]))))
 
 (deftest swd-reset-options
   (is (= {:operation :reset :host "pi" :method :swd :chip "RP2350" :speed-khz 2000}
          (operation ["reset" "--host" "pi" "--method" "swd"]
                     {:env {"PROBETRON_CHIP" "RP2350" "PROBETRON_SPEED_KHZ" "2000"}})))
   (is (= :pin (:method (operation ["reset" "--host" "pi" "--method" "pin"]))))
-  (doseq [[args message] [[["--method" "swd"] "missing --chip"]
+  (doseq [[args message] [[[] "missing --chip"]
+                          [["--method" "swd"] "missing --chip"]
                           [["--method" "other"] "expected pin or swd"]
-                          [["--chip" "RP2350"] "only with --method swd"]
-                          [["--speed-khz" "1000"] "only with --method swd"]
+                          [["--method" "pin" "--chip" "RP2350"] "only with --method swd"]
+                          [["--method" "pin" "--speed-khz" "1000"] "only with --method swd"]
                           [["--method" "swd" "--chip" "RP2350" "--speed-khz" "0"] "--speed-khz"]]]
     (is (str/includes? (usage-error (into ["reset" "--host" "pi"] args)) message))))
 
@@ -216,7 +218,7 @@
   (testing "a shell over the lab network names its rig"
     (is (= {:operation :shell :host "pi.lab"} (operation ["shell" "--host" "pi.lab"]))))
   (testing "--usb resolves the host of every other command too"
-    (is (= operation/usb-console-address (:host (operation ["reset" "--usb"]))))
+    (is (= operation/usb-console-address (:host (operation ["reset" "--usb" "--method" "pin"]))))
     (is (= operation/usb-console-address (:host (operation ["info" "--usb"])))))
   (testing "--usb and --host would name two rigs at once"
     (is (str/includes? (usage-error ["shell" "--usb" "--host" "pi.lab"]) "--usb")))

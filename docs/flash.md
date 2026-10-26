@@ -7,8 +7,10 @@ The rig validates the complete upload before it opens the probe.
 The rig monitors the remaining input for EOF and runs probe-rs in an owned process group.
 When the client exits or its connection closes, the rig terminates the group, waits for cleanup, and releases the target lock.
 The cleanup also removes flash uploads.
-The rig does not pulse RUN after an interrupted download.
-Normal downloads still verify the image before pulsing RUN, and probe-rs failures retain their exit status and diagnostics.
+The rig does not reset the target after an interrupted download.
+Normal downloads verify the image before the selected reset, and probe-rs failures retain their exit status and diagnostics.
+Flash defaults to SWD reset; use `--reset-method pin` to select a wired RUN reset.
+See [reset selection](reset.md) for guarantees and examples.
 
 Ctrl-C and handled termination signals close the tether and stop the client's SSH process.
 A hard client kill closes the pipe even when a multiplexed SSH master survives.

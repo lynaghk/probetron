@@ -28,9 +28,9 @@
       (is (= operation/exit-usage exit))
       (is (str/includes? err "--nozzle"))))
   (testing "a valid operation leaves validation and reaches the client shell"
-    (let [{:keys [exit err]} (run "bin/probetron" ["reset"] {"PROBETRON_HOST" "pi.lab"
-                                                             "HOME"           ""
-                                                             "XDG_CACHE_HOME" ""})]
+    (let [{:keys [exit err]} (run "bin/probetron" ["reset" "--chip" "RP2350"] {"PROBETRON_HOST" "pi.lab"
+                                                                               "HOME"           ""
+                                                                               "XDG_CACHE_HOME" ""})]
       (is (not= operation/exit-usage exit))
       (is (= operation/exit-failure exit))
       (is (str/includes? err "XDG_CACHE_HOME")

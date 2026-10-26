@@ -16,7 +16,7 @@
             [probetron.version :as version])
   (:import (java.io InputStream OutputStream)))
 
-(declare report-information! flash! erase! reset-target! pulse-reset!
+(declare report-information! flash! erase! reset-after-flash! reset-target! pulse-reset!
          capture! upload-path receive-session-elf! read-uint32! with-upload!
          copy-bounded! elf-refusal oversize-message missing-status refuse!)
 
@@ -53,11 +53,13 @@
 (defn flash!
   "Download one uploaded ELF, verify it, and start the firmware it verified.
 
-   The upload validates before probe-rs opens the target, and the RUN line
-   pulses only after probe-rs verified what it wrote."
-  [{:keys [chip speed-khz terminal]} {:keys [runtime start-helper! watch-client! stopping?]}]
+   The upload validates before probe-rs opens the target, and the selected reset
+   runs only after probe-rs verified what it wrote."
+  [{:keys [chip speed-khz terminal reset-method] :or {reset-method :swd} :as operation}
+   {:keys [runtime start-helper! watch-client! stopping?] :as session}]
   (let [{:keys [executables hardware]} runtime]
-    (or (missing-status runtime [:probe-rs :spi-device :gpioset :gpio-chip])
+    (or (missing-status runtime (cond-> [:probe-rs :spi-device]
+                                  (not= :swd reset-method) (into [:gpioset :gpio-chip])))
         (with-upload!
           (upload-path runtime)
           (fn [path]
@@ -71,8 +73,18 @@
                                             {:out :inherit :err :inherit})
                       exit   (.waitFor ^Process (:proc helper))]
                   (if (and (zero? exit) (not (stopping?)))
-                    (pulse-reset! runtime)
+                    (reset-after-flash! operation session)
                     exit)))))))))
+
+(defn reset-after-flash!
+  "Run exactly the selected reset after a verified flash, without fallback."
+  [{:keys [reset-method] :or {reset-method :swd} :as operation} {:keys [runtime start-helper!]}]
+  (if (= :swd reset-method)
+    (let [{:keys [executables hardware]} runtime
+          helper                         (start-helper! (hardware/swd-reset-command executables hardware operation)
+                                                        {:out :inherit :err :inherit})]
+      (.waitFor ^Process (:proc helper)))
+    (pulse-reset! runtime)))
 
 (defn erase!
   "Erase the target once and give back exactly the status probe-rs returned."
@@ -88,7 +100,7 @@
 
 (defn reset-target!
   "Complete the requested reset sequence and preserve probe-rs diagnostics and status."
-  [{:keys [method] :as operation} {:keys [executables hardware run!] :as runtime}]
+  [{:keys [method] :or {method :swd} :as operation} {:keys [executables hardware run!] :as runtime}]
   (if (= :swd method)
     (or (missing-status runtime [:probe-rs :spi-device])
         (:exit (run! (hardware/swd-reset-command executables hardware operation) {})))

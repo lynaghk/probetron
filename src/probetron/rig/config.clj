@@ -38,13 +38,14 @@
                              :format    (:format values)}))
 
     (:flash :erase)
-    (op/finish (op/collect (into op/chip-and-speed-fields terminal-fields) context)
+    (op/finish (op/collect (cond-> (into op/chip-and-speed-fields terminal-fields)
+                             (= :flash command) (conj :reset-method)) context)
                [(op/unexpected-argument-error args)
                 (terminal-pair-error opts)]
                (fn [values] (cond-> {:operation command
                                      :chip      (:chip values)
                                      :speed-khz (:speed-khz values)}
-                              (= :flash command) (assoc :elf :stdin)
+                              (= :flash command) (assoc :elf :stdin :reset-method (:reset-method values))
                               (terminal values) (assoc :terminal (terminal values)))))
 
     (:run :run-ram)
@@ -124,7 +125,7 @@
         flash-or-erase (merge chip-and-speed {:terminal-cols value :terminal-rows value})]
     {:info    {:speed-khz value :format value}
      :status  {:format value}
-     :flash   flash-or-erase
+     :flash   (assoc flash-or-erase :reset-method value)
      :run     (merge chip-and-speed {:reset-on-exit flag})
      :run-ram (merge chip-and-speed {:reset-on-exit flag})
      :erase   flash-or-erase
@@ -143,7 +144,7 @@
   {:info    "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
    :status  "  probetron-rig status  [--format <text|edn>]"
    :log     "  probetron-rig log"
-   :flash   (str "  probetron-rig flash   --chip <chip> [--speed-khz <speed>]"
+   :flash   (str "  probetron-rig flash   --chip <chip> [--speed-khz <speed>] [--reset-method <pin|swd>]"
                  " [--terminal-cols <columns> --terminal-rows <rows>]")
    :erase   (str "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
                  " [--terminal-cols <columns> --terminal-rows <rows>]")

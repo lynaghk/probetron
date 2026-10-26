@@ -18,7 +18,7 @@
          elf put8! put16! put32! flash-operation probe-rs gpioset)
 
 (def flash-operation
-  {:operation :flash :chip "RP235x" :speed-khz 4000 :elf :stdin})
+  {:operation :flash :chip "RP235x" :speed-khz 4000 :elf :stdin :reset-method :pin})
 
 (deftest information-identifies-the-rig-and-the-target
   (let [{:keys [exit out calls directory]}
@@ -101,6 +101,46 @@
             "--toggle" "100ms,0" "26=0"]
            reset))
     (is (empty? uploads) "the upload must not survive the operation")))
+
+(deftest flash-defaults-to-swd-and-resets-once-without-fallback
+  (doseq [[method download-status reset-status]
+          [[nil 0 0] ["pin" 0 0] ["swd" 0 0] ["swd" 2 0] ["swd" 0 3]]]
+    (let [public    (:operation (cli/parse (cond-> ["flash" "--host" "pi" "--chip" "RP2350"
+                                                    "--speed-khz" "2000"]
+                                             method (into ["--reset-method" method])
+                                             true (conj "firmware.elf"))
+                                           {:elf-facts (constantly {:exists? true :regular-file? true
+                                                                    :size    128  :elf-header?   true})}))
+          operation (:operation (config/parse (vec (rest (op/rig-command public))) {}))
+          {:keys [exit calls directory uploads err]}
+          (with-rig! operation
+            {:stdin     (elf)
+             :remove    (when (not= "pin" method) ["gpioset" "gpiochip0"])
+             :responses (fn [argv]
+                          (let [command (command-name argv)
+                                status  (if (= :download command) download-status reset-status)]
+                            (when (and (= :reset command) (pos? status))
+                              (binding [*out* *err*] (println "SWD reset failed")))
+                            {:exit status}))})]
+      (is (= (if (pos? download-status) download-status reset-status) exit))
+      (is (= (if (pos? download-status) [:download]
+                 (if (= "pin" method) [:download :gpioset] [:download :reset]))
+             (mapv command-name calls)))
+      (when (and (not= "pin" method) (zero? download-status))
+        (is (= [(probe-rs directory) "reset" "--probe" "0:0:/dev/spidev0.0" "--protocol" "swd"
+                "--chip" "RP2350" "--speed" "2000" "--method" "core"]
+               (second calls)))
+        (when (pos? reset-status) (is (str/includes? err "SWD reset failed"))))
+      (is (empty? uploads)))))
+
+(deftest flash-rejects-unsupported-reset-methods-before-opening-the-probe
+  (let [client (cli/parse ["flash" "--host" "pi" "--chip" "RP2350" "--reset-method" "auto" "firmware.elf"]
+                          {:elf-facts (constantly {:exists? true :regular-file? true
+                                                   :size    128  :elf-header?   true})})
+        rig    (config/parse ["flash" "--chip" "RP2350" "--reset-method" "auto"] {})]
+    (doseq [result [client rig]]
+      (is (= :error (:action result)))
+      (is (str/includes? (:message result) "--reset-method")))))
 
 (deftest a-failed-download-never-pulses-the-reset-line
   (let [{:keys [exit calls uploads]}
@@ -193,7 +233,9 @@
            (mapv probe-argv calls)))))
 
 (deftest reset-pulses-the-run-line-low-and-releases-it
-  (let [{:keys [exit calls directory]} (with-rig! {:operation :reset} {})]
+  (let [public                         (:operation (cli/parse ["reset" "--host" "pi" "--method" "pin"] {}))
+        operation                      (:operation (config/parse (vec (rest (op/rig-command public))) {}))
+        {:keys [exit calls directory]} (with-rig! operation {})]
     (is (= op/exit-ok exit))
     (is (= [[(gpioset directory) "--chip" (str (fs/path directory "gpiochip0"))
              "--toggle" "100ms,0" "26=0"]]
@@ -201,7 +243,7 @@
 
 (deftest swd-reset-completes-once-and-preserves-the-probe-status
   (doseq [status [0 2]]
-    (let [public    (:operation (cli/parse ["reset" "--host" "pi" "--method" "swd"
+    (let [public    (:operation (cli/parse ["reset" "--host" "pi"
                                             "--chip" "RP2350" "--speed-khz" "2000"] {}))
           operation (:operation (config/parse (vec (rest (op/rig-command public))) {}))
           {:keys [exit calls directory err]}
@@ -225,8 +267,8 @@
            [{:operation :erase :chip "RP235x" :speed-khz 1000} "spidev0.0" "SPI0"]
            [{:operation :reset :method :swd :chip "RP2350"} "probe-rs" "reinstall the rig image"]
            [{:operation :reset :method :swd :chip "RP2350"} "spidev0.0" "SPI0"]
-           [{:operation :reset} "gpioset" "gpiod"]
-           [{:operation :reset} "gpiochip0" "header pin 37"]
+           [{:operation :reset :method :pin} "gpioset" "gpiod"]
+           [{:operation :reset :method :pin} "gpiochip0" "header pin 37"]
            [flash-operation "gpiochip0" "header pin 37"]]]
     (let [{:keys [exit err calls]} (with-rig! operation {:remove [resource]})]
       (is (= op/exit-unavailable exit) resource)

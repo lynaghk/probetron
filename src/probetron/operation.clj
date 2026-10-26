@@ -89,12 +89,14 @@
         (case operation
           :status ["--format" (name format)]
           :info (into (speed-args public) ["--format" (name format)])
-          (:flash :erase) (into (chip-and-speed-args public) (terminal-args public))
+          :flash (cond-> (into (chip-and-speed-args public) (terminal-args public))
+                   (:reset-method public) (into ["--reset-method" (name (:reset-method public))]))
+          :erase (into (chip-and-speed-args public) (terminal-args public))
           (:run :run-ram) (cond-> (chip-and-speed-args public)
                             reset-on-exit? (conj "--reset-on-exit"))
-          :reset (if (= :swd (:method public))
-                   (into ["--method" "swd"] (chip-and-speed-args public))
-                   [])
+          :reset (cond-> []
+                   (:method public) (into ["--method" (name (:method public))])
+                   (= :swd (:method public)) (into (chip-and-speed-args public)))
           :log []
           :connect (cond-> ["--channel" (name channel)]
                      (= :uart channel) (into ["--baud" (str baud)])
@@ -213,7 +215,8 @@
 
     (:flash :run :run-ram)
     (let [elf (first args)]
-      (finish (collect (into [:host] chip-and-speed-fields) context)
+      (finish (collect (cond-> (into [:host] chip-and-speed-fields)
+                         (= :flash command) (conj :reset-method)) context)
               (into [(when-not elf (str "missing argument: pass the path of the ELF file to " (name command)))
                      (unexpected-argument-error (rest args))]
                     (when elf (elf-errors elf (elf-facts elf))))
@@ -222,6 +225,7 @@
                                     :chip      (:chip values)
                                     :speed-khz (:speed-khz values)
                                     :elf       elf}
+                             (= :flash command) (assoc :reset-method (:reset-method values))
                              (#{:run :run-ram} command) (assoc :reset-on-exit? (true? (:reset-on-exit opts)))))))
 
     :erase
@@ -330,7 +334,8 @@
    :terminal-cols    {:flag "--terminal-cols" :label "<columns>" :parse #'parse-terminal-dimension}
    :terminal-rows    {:flag "--terminal-rows" :label "<rows>" :parse #'parse-terminal-dimension}
    :channel          {:flag "--channel" :label "<usb|uart>" :parse #'parse-channel :required? true}
-   :method           {:flag "--method" :label "<pin|swd>" :parse #'parse-reset-method :default :pin}
+   :reset-method     {:flag "--reset-method" :label "<pin|swd>" :parse #'parse-reset-method :default :swd}
+   :method           {:flag "--method" :label "<pin|swd>" :parse #'parse-reset-method :default :swd}
    :format           {:flag "--format" :label "<text|edn>" :parse #'parse-format :default :text}})
 
 (defn resolve-field

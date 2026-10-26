@@ -37,8 +37,8 @@
          (operation/rig-command {:operation :info :host "pi" :format :text :speed-khz 20})))
   (is (= ["probetron-rig" "status" "--format" "edn"]
          (operation/rig-command {:operation :status :host "pi" :format :edn})))
-  (is (= ["probetron-rig" "reset"]
-         (operation/rig-command {:operation :reset :host "pi"})))
+  (is (= ["probetron-rig" "reset" "--method" "pin"]
+         (operation/rig-command {:operation :reset :host "pi" :method :pin})))
   (is (= ["probetron-rig" "log"]
          (operation/rig-command {:operation :log :host "pi"})))
   (is (= ["probetron-rig" "flash" "--chip" "RP2350" "--speed-khz" "1000"]
@@ -86,7 +86,8 @@
                   connect-operation
                   (assoc connect-operation :rtt {:elf "app.elf" :chip "RP2350" :speed-khz 2000})
                   {:operation :erase :host "pi" :chip "RP2350" :speed-khz 4000}
-                  {:operation :reset :host "pi"}
+                  {:operation :reset :host "pi" :method :pin}
+                  {:operation :reset :host "pi" :method :swd :chip "RP2350" :speed-khz 8000}
                   {:operation :info :host "pi" :format :edn :speed-khz 20}
                   {:operation :debug :host "pi" :local-port 3333 :reset-on-exit? true}]]
     (let [argv   (rest (operation/rig-command public))
