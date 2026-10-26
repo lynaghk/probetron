@@ -455,7 +455,10 @@
     (fs/create-dirs work)
     (fs/delete-if-exists image)
     (try
-      (stream! {:extra-env {"SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
+      ;; The generator clears HOME for layer resolution, so mise shims cannot
+      ;; load their configuration. Use the host's system tools throughout.
+      (stream! {:extra-env {"PATH"              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                            "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
                (into [(str (fs/path checkout "rpi-image-gen")) "build"
                       "-S" (str (fs/path project-root source-root))
                       "-c" config-file
