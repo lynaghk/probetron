@@ -24,7 +24,7 @@
          layer-files pipeline-layers canonical-env overrides ig-program dependency-state
          install-hint install-command
          capture! stream! download! extract! build-probe-rs! sha-256-file os-release environment-file
-         fail! fatal move!)
+         fail! fatal move! base-fingerprint cached-files generate-base! refresh-release!)
 
 (def project-root
   "The Probetron project directory, which holds bb.edn, image/, and build/.
@@ -73,8 +73,8 @@
 (def required-space
   "How much free space one build needs where it does that work.
 
-   The chroot, the package cache, and the raw image are the whole of it, and
-   ten gibibytes covers every image that this configuration can produce."
+   The working filesystem, its cached snapshot, the package cache, and the
+   raw image fit within ten gibibytes for this configuration."
   (* 10 1024 1024 1024))
 
 (def validation-message
@@ -85,19 +85,21 @@
   "Build the rig image from a command line and return an exit status."
   [argv]
   (let [argv                             (vec argv)
-        parsed                           (op/parse-options argv {:validate-only {:coerce :boolean}})
+        parsed                           (op/parse-options argv {:validate-only {:coerce :boolean}
+                                                                 :from-scratch  {:coerce :boolean}})
         {:keys [option-error opts args]} parsed]
     (cond
       (some #{"--help" "-h"} argv) (do (println (usage)) op/exit-ok)
       option-error (fatal (:message option-error) op/exit-usage)
       :else (try
-              (build! {:validate-only (:validate-only opts) :overrides args})
+              (build! {:validate-only (:validate-only opts)
+                       :from-scratch  (:from-scratch opts)  :overrides args})
               (catch clojure.lang.ExceptionInfo exception
                 (fatal (ex-message exception) (:status (ex-data exception) op/exit-failure)))))))
 
 (defn build!
   "Run the whole build, or stop after validation, and return an exit status."
-  [{:keys [validate-only overrides]}]
+  [{:keys [validate-only from-scratch overrides]}]
   (let [manifest (checked-manifest!)
         checkout (checkout! manifest)]
     (validate! manifest checkout)
@@ -108,8 +110,8 @@
         (report-topology! manifest)
         (require-privilege!)
         (let [work   (prepare-work!)
-              staged (stage! manifest)
-              raw    (generate-image! manifest checkout staged work overrides)]
+              staged (stage! manifest from-scratch)
+              raw    (generate-image! manifest checkout staged work overrides from-scratch)]
           (println (report (publish! manifest raw)))
           op/exit-ok)))))
 
@@ -118,11 +120,15 @@
   []
   (str/join
    \newline
-   ["Usage: bb image [--validate-only] [key=value ...]"
+   ["Usage: bb image [--validate-only] [--from-scratch] [key=value ...]"
     ""
     "Build the pinned immutable Probetron rig image on a Debian 13 arm64 host."
     ""
     "  --validate-only  Check the image configuration and its layers, then stop."
+    "  --from-scratch   Rebuild binaries and the filesystem; keep verified downloads."
+    "                   Dependency versions remain pinned by the repository."
+    ""
+    "Unchanged system inputs reuse a cached filesystem; the release is always replaced."
     "  key=value        One rpi-image-gen variable override, passed through."
     ""
     (str "Every pinned input lives in " manifest-file ".")
@@ -365,7 +371,10 @@
 
    Every artefact arrives on the build host and nothing is ever fetched from the
    target image, at first boot or later."
-  [manifest]
+  [manifest from-scratch]
+  (when from-scratch
+    (stream! {:dir (str (fs/path project-root probe-rs-source))}
+             ["cargo" "clean"] "cannot clear the probe-rs build outputs"))
   (let [stage          (fs/path project-root cache-directory "stage")
         keys-directory (fs/path stage "keys")
         rig-key        (fs/path keys-directory "probetron_key")
@@ -449,17 +458,18 @@
 
 (defn generate-image!
   "Run the pinned image generator and return the raw image that it wrote."
-  [manifest checkout staged work extra]
+  [manifest checkout staged work extra from-scratch]
   (let [name  (get-in manifest [:device :image-name])
         image (fs/path work (str "image-" name) (str name ".img"))]
-    (fs/create-dirs work)
-    (fs/delete-if-exists image)
     (try
+      (generate-base! manifest checkout staged work extra from-scratch)
+      (refresh-release! staged work)
+      (fs/delete-if-exists image)
       ;; The generator clears HOME for layer resolution, so mise shims cannot
       ;; load their configuration. Use the host's system tools throughout.
       (stream! {:extra-env {"PATH"              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                             "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
-               (into [(str (fs/path checkout "rpi-image-gen")) "build"
+               (into [(str (fs/path checkout "rpi-image-gen")) "build" "-i"
                       "-S" (str (fs/path project-root source-root))
                       "-c" config-file
                       "-B" (str work)
@@ -473,6 +483,100 @@
     (when-not (fs/regular-file? image)
       (fail! (str "the image build wrote no " image ": read the build output above")))
     image))
+
+(defn generate-base!
+  "Restore a complete filesystem snapshot, or build and publish a fresh one.
+
+   The snapshot precedes image hooks, which may modify the working filesystem.
+   A completion marker is written only after the snapshot copy succeeds."
+  [manifest checkout staged work extra from-scratch]
+  (let [base        (fs/path (str work "-base"))
+        marker      (fs/path base "base.sha256")
+        fingerprint (base-fingerprint staged extra)
+        reuse?      (and (not from-scratch) (fs/regular-file? marker)
+                         (= fingerprint (slurp (fs/file marker))))]
+    (fs/delete-tree work)
+    (fs/create-dirs work)
+    (if reuse?
+      (do
+        (println "Reusing cached base filesystem.")
+        (stream! {} ["cp" "-a" "--reflink=auto" (str base "/.") (str work)]
+                 "cannot restore the base filesystem"))
+      (do
+        (println "Building base filesystem.")
+        (fs/delete-tree base)
+        (stream! {:extra-env {"PATH"              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                              "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
+                 (into [(str (fs/path checkout "rpi-image-gen")) "build" "-f"
+                        "-S" (str (fs/path project-root source-root))
+                        "-c" config-file "-B" (str work) "--"]
+                       (into (overrides manifest staged) extra))
+                 "the base filesystem build failed")
+        (fs/create-dirs base)
+        (stream! {} ["cp" "-a" "--reflink=auto" (str work "/.") (str base)]
+                 "cannot save the base filesystem")
+        (spit (fs/file marker) fingerprint)))))
+
+(defn refresh-release!
+  "Replace the application and per-image SSH identities in the working copy."
+  [staged work]
+  (let [settings (environment-file (str (fs/path work "bootstrap" "final.env")))
+        root     (get settings "IGconf_target_path")
+        user     (get settings "IGconf_device_user1")]
+    (when-not (and root user (fs/directory? root))
+      (fail! "the base filesystem has no target path or user"))
+    (stream! {}
+             ["bash" "-eu" "-c"
+              (str "root=$1; release=$2; key=$3; user=$4; pubkey=$5\n"
+                   "rm -rf \"$root/usr/local/lib/probetron\"\n"
+                   "tar -xzf \"$release\" -C \"$root/usr/local\"\n"
+                   "PATH=\"$root/usr/local/bin:/usr/bin:/bin\" "
+                   "\"$root/usr/local/bin/probetron-rig\" version > \"$root/etc/motd\"\n"
+                   "od -An -N16 -tx1 /dev/urandom | tr -d ' \\n' > \"$root/etc/machine-id\"\n"
+                   "printf '\\n' >> \"$root/etc/machine-id\"\n"
+                   "install -m 0640 \"$key\" \"$root/etc/probetron/probetron_key\"\n"
+                   "chroot \"$root\" chown root:probetron-key /etc/probetron/probetron_key\n"
+                   "if [ -f \"$pubkey\" ]; then cat \"$pubkey\"; else printf '%s\\n' \"$pubkey\"; fi "
+                   "> \"$root/home/$user/.ssh/authorized_keys\"\n"
+                   "rm -f \"$root\"/etc/ssh/ssh_host_*\n"
+                   "for spec in ed25519:256 rsa:4096 ecdsa:384; do\n"
+                   "  type=${spec%:*}; bits=${spec#*:}\n"
+                   "  ssh-keygen -q -t \"$type\" -b \"$bits\" -N '' -C probetron "
+                   "-f \"$root/etc/ssh/ssh_host_${type}_key\"\n"
+                   "done\n")
+              "refresh-release" root (get settings "IGconf_probetron_release" (:release staged))
+              (get settings "IGconf_probetron_rig_key" (:rig-key staged)) user
+              (get settings "IGconf_ssh_pubkey_user1" (:authorized-key staged))]
+             "cannot update the image release and SSH identities")))
+
+(defn base-fingerprint
+  "Hash system inputs, including dirty probe-rs sources, without application code."
+  [staged extra]
+  (archive/sha-256-hex
+   (.getBytes
+    (pr-str {:project-root project-root
+             :files        (mapv (fn [path]
+                                   [path (sha-256-file (fs/path project-root path))
+                                    (sort (map str (fs/posix-file-permissions (fs/path project-root path))))])
+                                 (concat (cached-files source-root)
+                                         (map #(str probe-rs-source "/" %) (cached-files "." (fs/path project-root probe-rs-source)))
+                                         (cached-files "src/probetron/provisioning")
+                                         ["VERSION"]))
+             :binaries     (mapv #(sha-256-file (get staged %)) [:babashka :probe-rs])
+             :overrides    extra})
+    "UTF-8")))
+
+(defn cached-files
+  "Return tracked and nonignored working-tree files, excluding deleted files."
+  ([directory] (cached-files directory project-root))
+  ([directory root]
+   (->> (str/split (capture! {:dir (str root)}
+                             ["git" "ls-files" "-z" "--cached" "--others" "--exclude-standard"
+                              "--" directory]
+                             "cannot list image cache inputs") #"\u0000")
+        (remove str/blank?)
+        (filter #(fs/regular-file? (fs/path root %)))
+        sort)))
 
 (defn overrides
   "Return every variable that the layers read but the configuration cannot state."
