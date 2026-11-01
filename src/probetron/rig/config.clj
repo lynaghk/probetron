@@ -119,42 +119,44 @@
 
 (def command-specs
   "The options that each rig command accepts."
-  (let [value          frontend/value-option
-        flag           frontend/flag-option
-        chip-and-speed {:chip value :speed-khz value}
-        flash-or-erase (merge chip-and-speed {:terminal-cols value :terminal-rows value})]
-    {:info    {:speed-khz value :format value}
-     :status  {:format value}
-     :flash   (assoc flash-or-erase :reset-method value)
-     :run     (merge chip-and-speed {:reset-on-exit flag})
-     :run-ram (merge chip-and-speed {:reset-on-exit flag})
-     :erase   flash-or-erase
-     :reset   (merge {:method value} chip-and-speed)
-     :log     {}
-     :connect (merge {:channel          value
-                      :baud             value
-                      :usb-wait-seconds value
-                      :rtt              flag
-                      :reset-on-exit    flag}
-                     chip-and-speed)
-     :debug   {:reset-on-exit flag}}))
+  (frontend/spi-specs
+   (let [value          frontend/value-option
+         flag           frontend/flag-option
+         chip-and-speed {:chip value :speed-khz value}
+         flash-or-erase (merge chip-and-speed {:terminal-cols value :terminal-rows value})]
+     {:info    {:speed-khz value :format value}
+      :status  {:format value}
+      :flash   (assoc flash-or-erase :reset-method value)
+      :run     (merge chip-and-speed {:reset-on-exit flag})
+      :run-ram (merge chip-and-speed {:reset-on-exit flag})
+      :erase   flash-or-erase
+      :reset   (merge {:method value} chip-and-speed)
+      :log     {}
+      :connect (merge {:channel          value
+                       :baud             value
+                       :usb-wait-seconds value
+                       :rtt              flag
+                       :reset-on-exit    flag}
+                      chip-and-speed)
+      :debug   {:reset-on-exit flag}})))
 
 (def command-usage
   "The documented form of every rig command."
-  {:info    "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
-   :status  "  probetron-rig status  [--format <text|edn>]"
-   :log     "  probetron-rig log"
-   :flash   (str "  probetron-rig flash   --chip <chip> [--speed-khz <speed>] [--reset-method <pin|swd>]"
-                 " [--terminal-cols <columns> --terminal-rows <rows>]")
-   :erase   (str "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
-                 " [--terminal-cols <columns> --terminal-rows <rows>]")
-   :run     "  probetron-rig run --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
-   :run-ram "  probetron-rig run-ram --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
-   :reset   "  probetron-rig reset [--method pin|swd] [--chip <chip> [--speed-khz <speed>]]"
-   :connect (str "  probetron-rig connect --channel <usb|uart> [--baud <baud>]"
-                 " [--usb-wait-seconds <seconds>] [--rtt --chip <chip> [--speed-khz <speed>]]"
-                 " [--reset-on-exit]")
-   :debug   "  probetron-rig debug   [--reset-on-exit]"})
+  (frontend/spi-usage
+   {:info    "  probetron-rig info    [--speed-khz <speed>] [--format <text|edn>]"
+    :status  "  probetron-rig status  [--format <text|edn>]"
+    :log     "  probetron-rig log"
+    :flash   (str "  probetron-rig flash   --chip <chip> [--speed-khz <speed>] [--reset-method <pin|swd>]"
+                  " [--terminal-cols <columns> --terminal-rows <rows>]")
+    :erase   (str "  probetron-rig erase   --chip <chip> [--speed-khz <speed>]"
+                  " [--terminal-cols <columns> --terminal-rows <rows>]")
+    :run     "  probetron-rig run --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
+    :run-ram "  probetron-rig run-ram --chip <chip> [--speed-khz <speed>] [--reset-on-exit]"
+    :reset   "  probetron-rig reset [--method pin|swd] [--chip <chip> [--speed-khz <speed>]]"
+    :connect (str "  probetron-rig connect --channel <usb|uart> [--baud <baud>]"
+                  " [--usb-wait-seconds <seconds>] [--rtt --chip <chip> [--speed-khz <speed>]]"
+                  " [--reset-on-exit]")
+    :debug   "  probetron-rig debug   [--reset-on-exit]"}))
 
 (defn help-text
   "Return the help of the whole rig protocol."

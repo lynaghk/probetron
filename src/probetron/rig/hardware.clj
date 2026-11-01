@@ -1,9 +1,8 @@
 (ns probetron.rig.hardware
-  "Pure description of the fixed Probetron appliance.
+  "Pure description of the two fixed SPI connections of the Probetron appliance.
 
-   The one DUT slot never moves, so every device, executable, selector, port,
-   and limit is a constant here, and so is the argv of every hardware command
-   the rig runs.
+   Each connection has a fixed probe, reset GPIO, and debugger port.
+   SPI0 alone carries USB and UART byte channels.
    Nothing here opens a device, a file, or a process."
   (:require [clojure.string :as str]
             [probetron.operation :as op]))
@@ -18,11 +17,11 @@
 ;; script comes from bsdutils, an Essential package, so the image always carries it.
 (def script-executable "/usr/bin/script")
 
-;; The one target slot, wired as the README table describes.
+;; SPI0's default connection, wired as the README table describes.
 (def spi-device "/dev/spidev0.0")
 (def spi-selector-prefix "0:0:")
 (def probe-selector (str spi-selector-prefix spi-device))
-(def swd-spi-device "/dev/spidev_swd*")
+(def swd-spi-device "/dev/spidev_swd0")
 (def gpio-chip "/dev/gpiochip0")
 (def run-gpio 26)
 (def uart-device "/dev/ttyAMA0")
@@ -56,11 +55,11 @@
   (* 64 1024 1024))
 
 (def upload-directory
-  "The bounded volatile directory that carries one upload at a time."
+  "The bounded volatile directory for uploads, with a separate SPI1 subdirectory."
   "/run/probetron/uploads")
 
 (def defaults
-  "The fixed hardware of the appliance, which a test replaces value by value."
+  "SPI0's default hardware, which a test replaces value by value."
   {:probe-selector probe-selector
    :spi-device     spi-device
    :swd-spi-device swd-spi-device
@@ -73,6 +72,20 @@
    :dap-port       dap-port
    :reset-pulse    reset-pulse
    :max-elf-bytes  max-elf-bytes})
+
+(defn select-spi
+  "Select the fixed SPI1 SWD wiring, preserving SPI0's existing hardware defaults."
+  [hardware spi]
+  (if (= 1 spi)
+    (assoc hardware
+           :probe-selector (spi-probe-selector "/dev/spidev1.0")
+           :spi-device "/dev/spidev1.0"
+           :swd-spi-device "/dev/spidev_swd1"
+           :run-gpio 16
+           :uart-device nil
+           :usb-device nil
+           :dap-port (op/dap-port 1))
+    hardware))
 
 (defn version-command
   "Return the argv that asks probe-rs which release the image carries."
@@ -267,16 +280,15 @@
                     :repair "reinstall the rig image, which installs the gpiod tools"}
    :spi-device     {:in     :hardware
                     :name   "SPI device"
-                    :repair (str "enable SPI0 in the rig image and wire SWCLK, SWDIO, and ground"
-                                 " to header pins 23, 21, 19, and 20")}
+                    :repair (str "enable the selected SPI controller in the rig image and check"
+                                 " the SWD wiring in docs/dual-spi.md")}
    :swd-spi-device {:in     :hardware
                     :name   "SWD SPI device"
-                    :repair (str "enable SPI0 in the rig image and reinstall the udev rule that"
-                                 " names the SWD bus, then wire SWCLK, SWDIO, and ground to"
-                                 " header pins 23, 21, 19, and 20")}
+                    :repair (str "enable the selected SPI controller and reinstall its SWD udev rule;"
+                                 " check the wiring in docs/dual-spi.md")}
    :gpio-chip      {:in     :hardware
                     :name   "GPIO chip"
-                    :repair "reboot the rig and wire GPIO26 on header pin 37 to the DUT RUN line"}
+                    :repair "reboot the rig and check the selected reset wiring (SPI0: header pin 37; SPI1: header pin 36)"}
    :socat          {:in     :executables
                     :name   "socat executable"
                     :repair "reinstall the rig image, which installs socat"}

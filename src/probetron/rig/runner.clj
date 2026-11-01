@@ -10,6 +10,7 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.edn :as edn]
+            [clojure.string :as str]
             [probetron.rig.hardware :as hardware]
             [probetron.rig.lifecycle :as lifecycle]
             [probetron.operation :as op]
@@ -22,7 +23,7 @@
          register-cleanup! watch-stdin! log-event! report-log!
          session start-helper! clean-up! stop-groups! signal-group! await-exit! run-reset!
          write-active! read-owner! delete-active! write-atomically! glob-paths report-busy!
-         fail! warn!)
+         fail! warn! select-spi execute-selected! report-all-status! status-record!)
 
 (def terminate-grace-ms
   "How long an owned process group has to answer SIGTERM before SIGKILL follows."
@@ -37,6 +38,30 @@
 
    The runtime supplies :perform, which receives the operation and a session
    handle, and :reset-target!, which --reset-on-exit calls once."
+  [operation runtime]
+  (if (and (= :status (:operation operation)) (not (contains? operation :spi)))
+    (report-all-status! operation runtime)
+    (let [spi (get operation :spi 0)]
+      (when-not (#{:status :log} (:operation operation))
+        (warn! (str "SPI" spi)))
+      (execute-selected! operation (select-spi runtime spi)))))
+
+(defn select-spi
+  "Give SPI1 independent runtime files and the fixed second SWD connection."
+  [runtime spi]
+  (if (= 1 spi)
+    (-> runtime
+        (update :hardware hardware/select-spi spi)
+        (update :paths (fn [paths]
+                         (-> paths
+                             (update :lock str ".spi1")
+                             (update :active str ".spi1")
+                             (update :dut-log str ".spi1")
+                             (update :uploads str "/spi1")))))
+    runtime))
+
+(defn execute-selected!
+  "Execute against an already selected runtime."
   [operation {:keys [paths filesystem] :as runtime}]
   (let [directory (str (fs/parent (:lock paths)))]
     (cond
@@ -258,19 +283,39 @@
     (try (.close ^OutputStream (:in holder)) (catch IOException _ nil))
     (await-exit! holder reap-grace-ms)))
 
+(defn status-record!
+  "Read one connection's ownership without opening its hardware."
+  [runtime]
+  (let [lock (probe-lock runtime)]
+    (when-not (= :unavailable lock)
+      (let [held? (= :held lock)
+            owner (when held? (read-owner! runtime))]
+        (when-not held? (delete-active! runtime))
+        (lifecycle/status-report (version/stamp-line (version/describe)) held? owner)))))
+
+(defn report-all-status!
+  "Report both SPI connections without probing either target."
+  [{:keys [format]} runtime]
+  (let [reports (into (sorted-map)
+                      (map (fn [spi] [spi (status-record! (select-spi runtime spi))]))
+                      [0 1])]
+    (if (some nil? (vals reports))
+      (fail! "cannot read SPI connection locks: check the rig installation")
+      (do
+        (println (case format
+                   :edn (pr-str {:connections reports})
+                   :text (str/join "\n"
+                                   (map (fn [[spi report]]
+                                          (str "SPI" spi ":\n" (lifecycle/render-status report :text))) reports))))
+        op/exit-ok))))
+
 (defn report-status!
   "Report the state of the target lock and its owner without opening the hardware."
   [{:keys [format]} {:keys [paths] :as runtime}]
-  (let [lock  (probe-lock runtime)
-        held? (= :held lock)]
-    (if (= :unavailable lock)
-      (fail! (str "cannot read the target lock " (:lock paths) ": check the rig installation"))
-      (let [owner (when held? (read-owner! runtime))]
-        (when-not held? (delete-active! runtime))
-        (println (lifecycle/render-status
-                  (lifecycle/status-report (version/stamp-line (version/describe)) held? owner)
-                  format))
-        op/exit-ok))))
+  (if-let [report (status-record! runtime)]
+    (do (println (lifecycle/render-status report format))
+        op/exit-ok)
+    (fail! (str "cannot read the target lock " (:lock paths) ": check the rig installation"))))
 
 (defn probe-lock
   "Return :free, :held, or :unavailable for the target lock."

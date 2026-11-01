@@ -1,9 +1,9 @@
 # METABEGIN
 # X-Env-Layer-Name: probetron-hardware
 # X-Env-Layer-Category: probetron
-# X-Env-Layer-Desc: The one fixed DUT slot. Enables SPI0 for direct Linux SWD,
-#  puts UART0 on GPIO14 and GPIO15 with no serial console, leaves GPIO26 free
-#  for the RUN line, and reserves every target device from the probetron
+# X-Env-Layer-Desc: Two fixed SWD connections on SPI0 and SPI1, with reset on
+#  GPIO26 and GPIO16. UART0 on GPIO14 and GPIO15 serves SPI0 alone, with no
+#  serial console. Reserves every target device from the probetron
 #  account by giving it to the empty probetron-hardware group.
 # X-Env-Layer-Version: 1.0.0
 # X-Env-Layer-Requires: probetron-runtime,rpi-boot-firmware
@@ -26,10 +26,13 @@ mmdebstrap:
       set -eu
       cat >> "$1/boot/firmware/config.txt" <<'EOCONFIG'
 
-      # Probetron: the one fixed DUT slot.
+      # Probetron: two fixed SWD connections; SPI0 alone has serial channels.
       [all]
       # SPI0 on GPIO11, GPIO9, and GPIO10 carries SWD to the target.
       dtparam=spi=on
+      # SPI1 on GPIO21, GPIO19, and GPIO20 carries the second SWD connection.
+      # GPIO18 is reserved for the unused SPI1 chip-select signal.
+      dtoverlay=spi1-1cs
       # UART0 on GPIO14 and GPIO15 carries the optional DUT serial channel.
       enable_uart=1
       dtoverlay=disable-bt

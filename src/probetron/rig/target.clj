@@ -114,7 +114,7 @@
         (if (zero? exit)
           op/exit-ok
           (refuse! (str "the reset of the target failed with gpioset exit " exit
-                        ": check that GPIO26 on header pin 37 reaches the DUT RUN line"))))))
+                        ": check that GPIO" (:run-gpio hardware) " reaches the DUT RESET / RUN line"))))))
 
 (defn upload-path
   "Return the unique volatile file that carries one upload."

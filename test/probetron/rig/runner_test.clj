@@ -234,7 +234,7 @@
   [directory format]
   (let [out (StringWriter.)]
     (is (= op/exit-ok (binding [*out* out]
-                        (runner/execute! {:operation :status :format format} (rig-runtime directory {})))))
+                        (runner/execute! {:operation :status :spi 0 :format format} (rig-runtime directory {})))))
     (str out)))
 
 (defn lock-state

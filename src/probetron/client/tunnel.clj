@@ -117,10 +117,10 @@
 
 (defn rig-port
   "Return the fixed rig loopback port that one long operation publishes."
-  [{:keys [operation]}]
+  [{:keys [operation spi]}]
   (case operation
     :connect op/rig-byte-port
-    :debug op/rig-dap-port))
+    :debug (op/dap-port spi)))
 
 (defn register-cleanup!
   "Register the cleanup that a handled client signal runs.

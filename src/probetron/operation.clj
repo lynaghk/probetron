@@ -10,7 +10,7 @@
 (declare build-command usb-error connect-fields connect-option-errors fields resolve-field
          parse-host parse-chip build-reset
          parse-speed-khz parse-baud parse-usb-wait-seconds parse-local-port parse-channel
-         parse-format parse-reset-method parse-terminal-dimension parse-integer ok invalid
+         parse-format parse-reset-method parse-terminal-dimension parse-integer parse-spi ok invalid
          hostname? ipv4-literal? ipv6-literal?)
 
 ;; Exit statuses of both entry points.
@@ -85,7 +85,8 @@
    Client-only values such as the local port and the pty request stay out of it
    and each ELF file travels over standard input rather than as a path."
   [{:keys [operation format channel baud usb-wait-seconds rtt reset-on-exit?] :as public}]
-  (into ["probetron-rig" (name operation)]
+  (into (cond-> ["probetron-rig" (name operation)]
+          (contains? public :spi) (into ["--spi" (str (:spi public))]))
         (case operation
           :status ["--format" (name format)]
           :info (into (speed-args public) ["--format" (name format)])
@@ -322,7 +323,8 @@
 
 (def fields
   "How every option-carried value is named, defaulted, and validated."
-  {:host             {:flag "--host" :label "<host>" :env-var "PROBETRON_HOST" :parse #'parse-host :required? true}
+  {:spi              {:flag "--spi" :label "<0|1>" :env-var "PROBETRON_SPI" :parse #'parse-spi}
+   :host             {:flag "--host" :label "<host>" :env-var "PROBETRON_HOST" :parse #'parse-host :required? true}
    :chip             {:flag "--chip" :label "<chip>" :env-var "PROBETRON_CHIP" :parse #'parse-chip :required? true}
    :speed-khz        {:flag  "--speed-khz"     :label   "<speed>"         :env-var "PROBETRON_SPEED_KHZ"
                       :parse #'parse-speed-khz :default default-speed-khz}
@@ -374,6 +376,29 @@
   (if (re-matches #"[A-Za-z0-9][A-Za-z0-9_.+-]{0,63}" value)
     (ok value)
     (invalid "expected a probe-rs chip name")))
+
+(defn select-spi
+  "Resolve explicit SPI selection without probing hardware or changing implicit SPI0 defaults."
+  [command context result]
+  (if (or (= :shell command) (:errors result))
+    result
+    (let [{:keys [value error]} (resolve-field :spi context)]
+      (cond
+        error {:errors [error]}
+        (and (= :connect command) (= 1 value))
+        {:errors ["SPI1 supports SWD only; connect USB/UART is available only on SPI0"]}
+        (some? value) (assoc-in result [:operation :spi] value)
+        :else result))))
+
+(defn parse-spi
+  "Accept one of the two wired SPI controllers."
+  [value]
+  (parse-integer value 0 1))
+
+(defn dap-port
+  "Return the loopback debugger port for a selected SPI controller."
+  [spi]
+  (+ rig-dap-port (or spi 0)))
 
 (defn parse-speed-khz
   "Accept an SWD clock in kilohertz."

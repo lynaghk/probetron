@@ -19,7 +19,7 @@
   "Return the help of the whole public command."
   []
   (str/join "\n"
-            (concat ["Probetron gives lab clients network access to one ARM SWD target on a Raspberry Pi."
+            (concat ["Probetron gives lab clients network access to two ARM SWD targets on a Raspberry Pi."
                      ""
                      "Usage:"]
                     (frontend/usage-lines front-end)
@@ -35,7 +35,8 @@
 (defn environment-lines
   "Return the environment defaults that the public commands read."
   []
-  ["  PROBETRON_HOST              default for --host"
+  ["  PROBETRON_SPI               default for --spi (0; no automatic fallback)"
+   "  PROBETRON_HOST              default for --host"
    "  PROBETRON_CHIP              default for --chip"
    (str "  PROBETRON_SPEED_KHZ         override --speed-khz defaults ("
         op/default-speed-khz "; run-ram " op/default-ram-speed-khz ")")
@@ -58,45 +59,47 @@
   "The options that each public command accepts.
 
    --usb names the rig on the USB console, so every command takes it."
-  (let [value          frontend/value-option
-        flag           frontend/flag-option
-        chip-and-speed {:chip value :speed-khz value}]
-    {:info    {:host value :usb flag :speed-khz value :format value}
-     :status  {:host value :usb flag :format value}
-     :log     {:host value :usb flag}
-     :flash   (merge {:host value :usb flag :reset-method value} chip-and-speed)
-     :run     (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
-     :run-ram (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
-     :erase   (merge {:host value :usb flag} chip-and-speed)
-     :reset   (merge {:host value :usb flag :method value} chip-and-speed)
-     :shell   {:host value :usb flag}
-     :connect (merge {:host             value
-                      :usb              flag
-                      :channel          value
-                      :baud             value
-                      :usb-wait-seconds value
-                      :local-port       value
-                      :rtt              value
-                      :pty              flag
-                      :reset-on-exit    flag}
-                     chip-and-speed)
-     :debug   {:host value :usb flag :local-port value :reset-on-exit flag}}))
+  (frontend/spi-specs
+   (let [value          frontend/value-option
+         flag           frontend/flag-option
+         chip-and-speed {:chip value :speed-khz value}]
+     {:info    {:host value :usb flag :speed-khz value :format value}
+      :status  {:host value :usb flag :format value}
+      :log     {:host value :usb flag}
+      :flash   (merge {:host value :usb flag :reset-method value} chip-and-speed)
+      :run     (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
+      :run-ram (merge {:host value :usb flag :reset-on-exit flag} chip-and-speed)
+      :erase   (merge {:host value :usb flag} chip-and-speed)
+      :reset   (merge {:host value :usb flag :method value} chip-and-speed)
+      :shell   {:host value :usb flag}
+      :connect (merge {:host             value
+                       :usb              flag
+                       :channel          value
+                       :baud             value
+                       :usb-wait-seconds value
+                       :local-port       value
+                       :rtt              value
+                       :pty              flag
+                       :reset-on-exit    flag}
+                      chip-and-speed)
+      :debug   {:host value :usb flag :local-port value :reset-on-exit flag}})))
 
 (def command-usage
   "The documented form of every public command."
-  {:info    "  probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]"
-   :status  "  probetron status  --host <host> [--format <text|edn>]"
-   :log     "  probetron log     --host <host>"
-   :flash   "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] [--reset-method <pin|swd>] <elf>"
-   :run     "  probetron run     --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <elf>"
-   :run-ram "  probetron run-ram --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <ram-elf>"
-   :erase   "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
-   :reset   "  probetron reset   --host <host> [--method pin|swd] [--chip <chip> [--speed-khz <speed>]]"
-   :connect (str "  probetron connect --host <host> --channel <usb|uart> [--baud <baud>]"
-                 " [--usb-wait-seconds <seconds>] [--local-port <port>]"
-                 " [--rtt <elf> --chip <chip> [--speed-khz <speed>]] [--pty] [--reset-on-exit]")
-   :debug   "  probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]"
-   :shell   "  probetron shell   --host <host> | --usb"})
+  (frontend/spi-usage
+   {:info    "  probetron info    --host <host> [--speed-khz <speed>] [--format <text|edn>]"
+    :status  "  probetron status  --host <host> [--format <text|edn>]"
+    :log     "  probetron log     --host <host>"
+    :flash   "  probetron flash   --host <host> --chip <chip> [--speed-khz <speed>] [--reset-method <pin|swd>] <elf>"
+    :run     "  probetron run     --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <elf>"
+    :run-ram "  probetron run-ram --host <host> --chip <chip> [--speed-khz <speed>] [--reset-on-exit] <ram-elf>"
+    :erase   "  probetron erase   --host <host> --chip <chip> [--speed-khz <speed>]"
+    :reset   "  probetron reset   --host <host> [--method pin|swd] [--chip <chip> [--speed-khz <speed>]]"
+    :connect (str "  probetron connect --host <host> --channel <usb|uart> [--baud <baud>]"
+                  " [--usb-wait-seconds <seconds>] [--local-port <port>]"
+                  " [--rtt <elf> --chip <chip> [--speed-khz <speed>]] [--pty] [--reset-on-exit]")
+    :debug   "  probetron debug   --host <host> [--local-port <port>] [--reset-on-exit]"
+    :shell   "  probetron shell   --host <host> | --usb"}))
 
 (def front-end
   "How the public command line reaches the operation model.

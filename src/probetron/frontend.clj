@@ -24,6 +24,18 @@
 (def value-option {:coerce :string})
 (def flag-option {:coerce :boolean})
 
+(defn spi-specs
+  "Add SPI selection to rig commands, leaving the client shell unchanged."
+  [specs]
+  (into {} (map (fn [[command spec]]
+                  [command (if (= :shell command) spec (assoc spec :spi value-option))])) specs))
+
+(defn spi-usage
+  "Document SPI selection on each hardware command."
+  [usage]
+  (into {} (map (fn [[command text]]
+                  [command (if (= :shell command) text (str text " [--spi <0|1>]"))])) usage))
+
 (defn parse
   "Turn one argv into an action map for one front end.
 
@@ -76,10 +88,8 @@
   (let [{:keys [opts args option-error]} (op/parse-options argv (command-specs command))]
     (if option-error
       {:action :error :message (option-message front-end command option-error) :exit op/exit-usage}
-      (let [{:keys [operation errors]} (build command (assoc context
-                                                             :opts opts
-                                                             :args args
-                                                             :use-env? use-env?))]
+      (let [context                    (assoc context :opts opts :args args :use-env? use-env?)
+            {:keys [operation errors]} (op/select-spi command context (build command context))]
         (if errors
           {:action :error :message (str/join "\n" errors) :exit op/exit-usage}
           {:action :run :operation operation})))))
