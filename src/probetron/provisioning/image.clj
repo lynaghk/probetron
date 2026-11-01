@@ -10,6 +10,7 @@
    imperative shell that owns files, subprocesses, and the network."
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -24,7 +25,8 @@
          layer-files pipeline-layers canonical-env overrides ig-program dependency-state
          install-hint install-command
          capture! stream! download! extract! build-probe-rs! sha-256-file os-release environment-file
-         fail! fatal move! base-fingerprint cached-files generate-base! refresh-release!)
+         fail! fatal move! base-fingerprint cached-files generate-base! refresh-release!
+         patch-image! release-script timed!)
 
 (def project-root
   "The Probetron project directory, which holds bb.edn, image/, and build/.
@@ -73,8 +75,8 @@
 (def required-space
   "How much free space one build needs where it does that work.
 
-   The working filesystem, its cached snapshot, the package cache, and the
-   raw image fit within ten gibibytes for this configuration."
+   The working filesystem, cached filesystem and disk image, package cache,
+   and output images fit within ten gibibytes for this configuration."
   (* 10 1024 1024 1024))
 
 (def validation-message
@@ -110,9 +112,10 @@
         (report-topology! manifest)
         (require-privilege!)
         (let [work   (prepare-work!)
-              staged (stage! manifest from-scratch)
-              raw    (generate-image! manifest checkout staged work overrides from-scratch)]
-          (println (report (publish! manifest raw)))
+              staged (timed! "Stage inputs" #(stage! manifest from-scratch))
+              raw    (timed! "Prepare disk image"
+                             #(generate-image! manifest checkout staged work overrides from-scratch))]
+          (println (report (timed! "Compress and checksum" #(publish! manifest raw))))
           op/exit-ok)))))
 
 (defn usage
@@ -127,9 +130,9 @@
     "  --validate-only  Check the image configuration and its layers, then stop."
     "  --from-scratch   Rebuild binaries and the filesystem; keep verified downloads."
     "                   Dependency versions remain pinned by the repository."
-    ""
-    "Unchanged system inputs reuse a cached filesystem; the release is always replaced."
     "  key=value        One rpi-image-gen variable override, passed through."
+    ""
+    "Unchanged system inputs reuse a cached disk image; the release is always replaced."
     ""
     (str "Every pinned input lives in " manifest-file ".")
     (str "The build works in " (work-directory (temporary-directory)) ", which TMPDIR moves,"
@@ -457,25 +460,43 @@
 ;;; Image construction and publication
 
 (defn generate-image!
-  "Run the pinned image generator and return the raw image that it wrote."
+  "Patch a cached disk image, or generate one when system inputs have changed."
   [manifest checkout staged work extra from-scratch]
   (let [name  (get-in manifest [:device :image-name])
         image (fs/path work (str "image-" name) (str name ".img"))]
     (try
-      (generate-base! manifest checkout staged work extra from-scratch)
-      (refresh-release! staged work)
-      (fs/delete-if-exists image)
-      ;; The generator clears HOME for layer resolution, so mise shims cannot
-      ;; load their configuration. Use the host's system tools throughout.
-      (stream! {:extra-env {"PATH"              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                            "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
-               (into [(str (fs/path checkout "rpi-image-gen")) "build" "-i"
-                      "-S" (str (fs/path project-root source-root))
-                      "-c" config-file
-                      "-B" (str work)
-                      "--"]
-                     (into (overrides manifest staged) extra))
-               "the image build failed")
+      (let [base     (fs/path (str work "-base"))
+            cached   (fs/path base "base.img")
+            marker   (fs/path base "base.sha256")
+            settings (fs/path base "bootstrap" "final.env")
+            reuse?   (and (not from-scratch) (fs/regular-file? cached)
+                          (fs/regular-file? marker) (fs/regular-file? settings)
+                          (= (base-fingerprint staged extra) (slurp (fs/file marker))))]
+        (if reuse?
+          (do
+            (println "Updating cached raw disk image.")
+            (fs/delete-tree work)
+            (fs/create-dirs (fs/parent image))
+            (patch-image! cached image staged (environment-file (str settings))))
+          (do
+            (generate-base! manifest checkout staged work extra from-scratch)
+            (refresh-release! staged work)
+            (fs/delete-if-exists image)
+            ;; The generator clears HOME for layer resolution, so mise shims cannot
+            ;; load their configuration. Use the host's system tools throughout.
+            (stream! {:extra-env {"PATH"              "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                                  "SOURCE_DATE_EPOCH" (str (get-in manifest [:suite :snapshot-epoch]))}}
+                     (into [(str (fs/path checkout "rpi-image-gen")) "build" "-i"
+                            "-S" (str (fs/path project-root source-root))
+                            "-c" config-file
+                            "-B" (str work)
+                            "--"]
+                           (into (overrides manifest staged) extra))
+                     "the image build failed")
+            (let [partial (fs/path base "base.img.part")]
+              (stream! {} ["cp" "--sparse=always" "--reflink=auto" (str image) (str partial)]
+                       "cannot cache the raw disk image")
+              (move! partial cached)))))
       (catch clojure.lang.ExceptionInfo exception
         (fail! (cond-> (ex-message exception)
                  (= :missing (dependency-state checkout))
@@ -527,27 +548,62 @@
       (fail! "the base filesystem has no target path or user"))
     (stream! {}
              ["bash" "-eu" "-c"
-              (str "root=$1; release=$2; key=$3; user=$4; pubkey=$5\n"
-                   "rm -rf \"$root/usr/local/lib/probetron\"\n"
-                   "tar -xzf \"$release\" -C \"$root/usr/local\"\n"
-                   "PATH=\"$root/usr/local/bin:/usr/bin:/bin\" "
-                   "\"$root/usr/local/bin/probetron-rig\" version > \"$root/etc/motd\"\n"
-                   "od -An -N16 -tx1 /dev/urandom | tr -d ' \\n' > \"$root/etc/machine-id\"\n"
-                   "printf '\\n' >> \"$root/etc/machine-id\"\n"
-                   "install -m 0640 \"$key\" \"$root/etc/probetron/probetron_key\"\n"
-                   "chroot \"$root\" chown root:probetron-key /etc/probetron/probetron_key\n"
-                   "if [ -f \"$pubkey\" ]; then cat \"$pubkey\"; else printf '%s\\n' \"$pubkey\"; fi "
-                   "> \"$root/home/$user/.ssh/authorized_keys\"\n"
-                   "rm -f \"$root\"/etc/ssh/ssh_host_*\n"
-                   "for spec in ed25519:256 rsa:4096 ecdsa:384; do\n"
-                   "  type=${spec%:*}; bits=${spec#*:}\n"
-                   "  ssh-keygen -q -t \"$type\" -b \"$bits\" -N '' -C probetron "
-                   "-f \"$root/etc/ssh/ssh_host_${type}_key\"\n"
-                   "done\n")
+              (release-script)
               "refresh-release" root (get settings "IGconf_probetron_release" (:release staged))
               (get settings "IGconf_probetron_rig_key" (:rig-key staged)) user
               (get settings "IGconf_ssh_pubkey_user1" (:authorized-key staged))]
              "cannot update the image release and SSH identities")))
+
+(defn release-script
+  "Return the installer shared by filesystem builds and mounted disk images."
+  []
+  (str "root=$1; release=$2; key=$3; user=$4; pubkey=$5\n"
+       "rm -rf \"$root/usr/local/lib/probetron\"\n"
+       "tar -xzf \"$release\" -C \"$root/usr/local\"\n"
+       "PATH=\"$root/usr/local/bin:/usr/bin:/bin\" "
+       "\"$root/usr/local/bin/probetron-rig\" version > \"$root/etc/motd\"\n"
+       "od -An -N16 -tx1 /dev/urandom | tr -d ' \\n' > \"$root/etc/machine-id\"\n"
+       "printf '\\n' >> \"$root/etc/machine-id\"\n"
+       "install -m 0640 \"$key\" \"$root/etc/probetron/probetron_key\"\n"
+       "chroot \"$root\" chown root:probetron-key /etc/probetron/probetron_key\n"
+       "if [ -f \"$pubkey\" ]; then cat \"$pubkey\"; else printf '%s\\n' \"$pubkey\"; fi "
+       "> \"$root/home/$user/.ssh/authorized_keys\"\n"
+       "rm -f \"$root\"/etc/ssh/ssh_host_*\n"
+       "for spec in ed25519:256 rsa:4096 ecdsa:384; do\n"
+       "  type=${spec%:*}; bits=${spec#*:}\n"
+       "  ssh-keygen -q -t \"$type\" -b \"$bits\" -N '' -C probetron "
+       "-f \"$root/etc/ssh/ssh_host_${type}_key\"\n"
+       "done\n"))
+
+(defn patch-image!
+  "Copy a cached disk and update its Linux partition in a private mount namespace."
+  [cached image staged settings]
+  (stream! {} ["cp" "--sparse=always" "--reflink=auto" (str cached) (str image)]
+           "cannot copy the cached raw disk image")
+  (let [table                (:partitiontable (json/parse-string
+                                               (capture! {} ["sfdisk" "--json" (str image)]
+                                                         "cannot read the image partition table") true))
+        roots                (filter #(= "83" (:type %)) (:partitions table))
+        {:keys [start size]} (first roots)
+        sector-size          (:sectorsize table)]
+    (when-not (and (= 1 (count roots)) (= "sectors" (:unit table)) sector-size start size)
+      (fail! "the cached image must have one Linux root partition"))
+    (stream! {}
+             ["unshare" "--mount" "--propagation" "private" "bash" "-eu" "-c"
+              (str "image=$1; offset=$2; length=$3; script=$4; release=$5; key=$6; user=$7; pubkey=$8\n"
+                   "root=$(mktemp -d \"$(dirname \"$image\")/root.XXXXXX\"); loop=\n"
+                   "cleanup() { mountpoint -q \"$root\" && umount \"$root\"; "
+                   "[ -z \"$loop\" ] || losetup -d \"$loop\"; rmdir \"$root\"; }\n"
+                   "trap cleanup EXIT\n"
+                   "loop=$(losetup --find --show --offset \"$offset\" --sizelimit \"$length\" \"$image\")\n"
+                   "mount -o rw,noatime \"$loop\" \"$root\"\n"
+                   "bash -eu -c \"$script\" refresh-release \"$root\" \"$release\" \"$key\" \"$user\" \"$pubkey\"\n")
+              "patch-image" (str image) (str (* start sector-size)) (str (* size sector-size))
+              (release-script) (get settings "IGconf_probetron_release" (:release staged))
+              (get settings "IGconf_probetron_rig_key" (:rig-key staged))
+              (get settings "IGconf_device_user1")
+              (get settings "IGconf_ssh_pubkey_user1" (:authorized-key staged))]
+             "cannot update the cached disk image")))
 
 (defn base-fingerprint
   "Hash system inputs, including dirty probe-rs sources, without application code."
@@ -603,7 +659,7 @@
         partial    (fs/path directory (str name ".part"))]
     (fs/create-dirs directory)
     (stream! {:out (fs/file partial)}
-             ["xz" "--compress" "--threads=0" "-6" "--stdout" (str image)]
+             ["xz" "--compress" "--threads=0" "-1" "--stdout" (str image)]
              (str "cannot compress " image))
     (let [digest (sha-256-file partial)
           record (fs/path directory (str name ".sha256.part"))]
@@ -622,6 +678,14 @@
              (str "sha256: " sha256)]))
 
 ;;; Small shells
+
+(defn timed!
+  "Run a build stage, print its elapsed wall time, and return its result."
+  [label f]
+  (let [start  (System/nanoTime)
+        result (f)]
+    (println (format "%s: %.2f s" label (/ (- (System/nanoTime) start) 1e9)))
+    result))
 
 (defn ig-program
   "Return the rpi-image-gen engine helper of one checkout."

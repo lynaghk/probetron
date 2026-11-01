@@ -31,7 +31,8 @@
                  "while [ \"$1\" != -B ]; do shift; done\nwork=$2\n"
                  "echo \"$mode\" >> '" calls "'\n"
                  "if [ \"$mode\" = -f ]; then\n"
-                 "  mkdir -p \"$work/filesystem\"\n"
+                 "  mkdir -p \"$work/filesystem\" \"$work/bootstrap\"\n"
+                 "  echo 'IGconf_device_user1=\"probetron\"' > \"$work/bootstrap/final.env\"\n"
                  "  echo base > \"$work/filesystem/base\"\n"
                  "else\n"
                  "  mkdir -p \"$work/image-test\"\n"
@@ -52,22 +53,28 @@
                                                    "each build starts before image-hook mutations")
                                                (spit (fs/file (fs/path directory "filesystem/application"))
                                                      (slurp (fs/file (fs/path root "src/app.clj")))))
+                    image/patch-image!       (fn [cached raw _ _]
+                                               (is (fs/regular-file? cached))
+                                               (spit (fs/file raw)
+                                                     (slurp (fs/file (fs/path root "src/app.clj")))))
                     image/publish!           (fn [_ raw]
                                                (is (= (slurp (fs/file (fs/path root "src/app.clj")))
                                                       (slurp (fs/file raw)))) {})
                     image/report             (constantly "built")]
         (is (str/includes? (build) "Building base filesystem"))
         (spit (fs/file (fs/path root "src/app.clj")) "updated application")
-        (is (str/includes? (build) "Reusing cached base filesystem"))
+        (is (str/includes? (build) "Updating cached raw disk image"))
+        (is (= "application" (slurp (fs/file (fs/path (str work "-base") "base.img"))))
+            "the cached disk keeps its original application")
         (spit (fs/file (fs/path root "vendor/probe-rs/lib.rs")) "changed probe source")
         (is (str/includes? (build) "Building base filesystem"))
         (spit (fs/file (fs/path root "image/config.yaml")) "changed configuration")
         (is (str/includes? (build) "Building base filesystem"))
         (is (str/includes? (build "custom=value") "Building base filesystem"))
-        (is (str/includes? (build "custom=value") "Reusing cached base filesystem"))
+        (is (str/includes? (build "custom=value") "Updating cached raw disk image"))
         (is (str/includes? (build "--from-scratch" "custom=value") "Building base filesystem"))
         (is (= [nil nil nil nil nil nil true] @resets))
-        (is (= ["-f" "-i" "-i" "-f" "-i" "-f" "-i" "-f" "-i" "-i" "-f" "-i"]
+        (is (= ["-f" "-i" "-f" "-i" "-f" "-i" "-f" "-i" "-f" "-i"]
                (str/split-lines (slurp (fs/file calls))))))
       (finally (fs/delete-tree root)))))
 
